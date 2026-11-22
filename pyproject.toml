@@ -1,0 +1,50 @@
+[project]
+name = "read-reply"
+version = "0.1.0"
+description = "Read aloud the last reply of the coding agent in the active Herdr pane"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = []
+
+[project.scripts]
+read-reply = "read_reply.cli:main"
+
+[build-system]
+requires = ["uv_build>=0.13.7,<0.14.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "mypy>=2.4",
+    "pytest>=9.2",
+    "ruff>=0.17",
+]
+
+[tool.uv]
+# Only versions published at least two weeks ago: a malicious release is
+# usually caught and pulled within days.
+exclude-newer = "14 days"
+
+[tool.ruff.lint]
+extend-select = [
+    "B",    # flake8-bugbear: likely bugs
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "I",    # import order
+    "PL",   # pylint
+    "RUF",  # ruff's own rules
+    "SIM",  # simplifications
+    "UP",   # newer Python syntax
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests compare with literal values on purpose.
+"tests/**" = ["PLR2004"]
+
+[tool.mypy]
+strict = true
+files = ["src", "tests"]
+
+[tool.pytest]
+testpaths = ["tests"]
+addopts = ["-ra", "--strict-markers", "--strict-config"]

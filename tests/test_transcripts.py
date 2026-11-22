@@ -87,6 +87,7 @@ def test_codex_reply_is_the_last_task_with_a_message(tmp_path: Path) -> None:
         task_complete("Primera tarea."),
         task_complete("Segunda tarea."),
         task_complete(None),
+        task_complete(" \n"),
     )
 
     assert codex_reply(lines_from_end(path)) == "Segunda tarea."

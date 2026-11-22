@@ -122,8 +122,9 @@ def codex_reply(lines: Iterator[bytes]) -> str | None:
         ends_task = (
             entry.get("type") == "event_msg" and payload.get("type") == "task_complete"
         )
-        if ends_task and payload.get("last_agent_message"):
-            return str(payload["last_agent_message"])
+        message = str(payload.get("last_agent_message") or "")
+        if ends_task and message.strip():
+            return message
     return None
 
 

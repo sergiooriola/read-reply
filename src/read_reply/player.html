@@ -27,14 +27,17 @@
     });
   }
 
-  // A voice that works without internet: the first local one preferred, or
-  // any local Spanish (Spain) voice.
+  // A voice that works without internet: the first local one preferred,
+  // then any local voice of Spain, then any local Spanish one.
   function localVoice(preferred) {
     const local = (voice) => voice?.localService;
-    const spanish = speechSynthesis
-      .getVoices()
-      .find((voice) => local(voice) && voice.lang === "es-ES");
-    return preferred.map(voiceNamed).find(local) ?? spanish ?? null;
+    const voices = speechSynthesis.getVoices().filter(local);
+    return (
+      preferred.map(voiceNamed).find(local) ??
+      voices.find((voice) => voice.lang === "es-ES") ??
+      voices.find((voice) => voice.lang.startsWith("es")) ??
+      null
+    );
   }
 
   // Resolves with the error that stopped the utterance, or null.

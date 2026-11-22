@@ -89,12 +89,14 @@ def test_a_stop_with_a_half_written_address_does_nothing(
 
 def test_a_stop_waits_a_moment_for_a_reading_that_is_starting(tmp_path: Path) -> None:
     player = Player(tmp_path)
-    threading.Timer(0.2, player.__enter__).start()
+    starting = threading.Timer(0.2, player.__enter__)
+    starting.start()
     try:
         request_stop(tmp_path)
 
         assert player.stop_requested
     finally:
+        starting.join()
         player.__exit__(None, None, None)
 
 

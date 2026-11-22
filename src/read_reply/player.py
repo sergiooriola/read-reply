@@ -137,7 +137,8 @@ class Player:
                 stop_deadline = stop_deadline or time.monotonic() + STOP_GRACE_S
                 if time.monotonic() > stop_deadline:
                     return  # the page did not react
-            elif edge_exited:
+            # "finished" may have arrived just after the wait above timed out.
+            elif edge_exited and not self._finished.is_set():
                 raise UserError("Edge se ha cerrado antes de terminar de leer.")
             elif not self._page_loaded.is_set() and time.monotonic() > start_deadline:
                 raise UserError("Edge no ha arrancado a tiempo.")

@@ -27,7 +27,7 @@ command = "read-reply"
 description = "Leer en voz alta la última respuesta del agente (otra vez: parar)"
 ```
 
-y `herdr server reload-config` para cargarlo. Para instalar una versión nueva del código: `uv tool install --reinstall ~/dev/read-reply`.
+y `herdr server reload-config` para cargarlo. Los errores salen como notificaciones de Herdr, que de serie están desactivadas: activa `[ui.toast] delivery = "herdr"` para verlas dentro de Herdr, o `"system"` para verlas como notificaciones de Windows. Para instalar una versión nueva del código: `uv tool install --reinstall ~/dev/read-reply`.
 
 ## Uso
 

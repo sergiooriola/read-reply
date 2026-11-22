@@ -1,4 +1,5 @@
 import json
+import shlex
 from pathlib import Path
 
 import pytest
@@ -54,7 +55,7 @@ def test_notify_shows_a_herdr_notification(
 ) -> None:
     calls = tmp_path / "calls"
     script = tmp_path / "herdr"
-    script.write_text(f'#!/bin/sh\nprintf "%s\\n" "$@" > {calls}\n')
+    script.write_text(f'#!/bin/sh\nprintf "%s\\n" "$@" > {shlex.quote(str(calls))}\n')
     script.chmod(0o755)
     monkeypatch.setenv("HERDR_BIN_PATH", str(script))
 

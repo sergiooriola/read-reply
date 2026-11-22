@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from read_reply import cli
+from read_reply import cli, herdr
 from read_reply.errors import UserError
 from read_reply.player import Player, request_stop
 
@@ -44,13 +44,20 @@ def test_errors_are_reported_and_exit_with_1(
     def fail(pane: str) -> list[str]:
         raise UserError("El panel activo no tiene ningún agente.")
 
+    notifications: list[tuple[str, str]] = []
     monkeypatch.setattr(cli, "reply_chunks", fail)
+    monkeypatch.setattr(
+        herdr, "notify", lambda title, body: notifications.append((title, body))
+    )
 
     with pytest.raises(SystemExit) as exit_info:
         cli.main(["--pane", "w1:p1", "--print"])
 
     assert exit_info.value.code == 1
     assert "no tiene ningún agente" in capsys.readouterr().err
+    assert notifications == [
+        ("Leer respuesta", "El panel activo no tiene ningún agente.")
+    ]
 
 
 def test_a_press_during_a_reading_stops_it(tmp_path: Path) -> None:
@@ -76,3 +83,24 @@ def test_a_stop_during_the_preparation_skips_speaking(
     monkeypatch.setattr(Player, "play", must_not_play)
 
     cli.read_or_stop("w1:p1", tmp_path)
+
+
+def test_a_reply_with_nothing_to_say_is_an_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(cli, "agent_in", lambda pane: None)
+    monkeypatch.setattr(cli, "last_reply", lambda agent: "---")
+
+    with pytest.raises(UserError, match="no tiene texto que leer"):
+        cli.reply_chunks("w1:p1")
+
+
+def test_the_state_lives_in_the_runtime_dir_or_in_the_home(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("XDG_RUNTIME_DIR", str(tmp_path / "run"))
+    assert cli.state_dir() == tmp_path / "run" / "read-reply"
+
+    monkeypatch.delenv("XDG_RUNTIME_DIR")
+    monkeypatch.setenv("HOME", str(tmp_path))
+    assert cli.state_dir() == tmp_path / ".cache" / "read-reply"

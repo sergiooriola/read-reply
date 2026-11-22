@@ -134,3 +134,43 @@ def test_last_reply_explains_a_session_without_a_finished_reply(tmp_path: Path) 
 
     with pytest.raises(UserError, match="todavía no ha terminado ninguna respuesta"):
         last_reply(Agent("claude", "abc"), home=tmp_path)
+
+
+def test_claude_reply_skips_blank_messages(tmp_path: Path) -> None:
+    path = jsonl(
+        tmp_path / "s.jsonl",
+        PROMPT,
+        assistant("m1", "end_turn", text("Hecho.")),
+        PROMPT,
+        {
+            "type": "assistant",
+            "message": {"id": "m2", "stop_reason": "end_turn", "content": " "},
+        },
+        assistant("m3", "end_turn", text("\n\n")),
+    )
+
+    assert claude_reply(lines_from_end(path)) == "Hecho."
+
+
+def test_a_last_line_cut_inside_a_character_is_skipped(tmp_path: Path) -> None:
+    cut = json.dumps(assistant("m2", "end_turn", text("Más")), ensure_ascii=False)
+    cut_bytes = cut.encode()[: cut.encode().index("á".encode()) + 1]
+    path = jsonl(
+        tmp_path / "s.jsonl",
+        PROMPT,
+        assistant("m1", "end_turn", text("Hecho.")),
+        tail=cut_bytes,
+    )
+
+    assert claude_reply(lines_from_end(path)) == "Hecho."
+
+
+def test_last_reply_follows_the_agents_data_variables(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "claude-data"))
+    jsonl(tmp_path / "claude-data/projects/-home-x/abc.jsonl", *CLAUDE_TRANSCRIPT)
+
+    reply = last_reply(Agent("claude", "abc"), home=tmp_path / "elsewhere")
+
+    assert reply == "Primera parte.\n\nSegunda parte."

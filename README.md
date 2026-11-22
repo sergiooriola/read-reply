@@ -9,7 +9,7 @@ Funciona con Claude Code y Codex dentro de [Herdr](https://herdr.dev), en WSL so
 - Windows con WSL 2, y Herdr 0.9.5 o posterior dentro de WSL.
 - Microsoft Edge en Windows, que viene con el sistema.
 - En WSL: [uv](https://docs.astral.sh/uv/) y [pandoc](https://pandoc.org).
-- Internet para la voz de Álvaro. Sin conexión debería leer con Pablo, la voz local de Windows, aunque no está probado.
+- Internet para la voz de Álvaro. Si Álvaro falla, la lectura sigue con una voz local de Windows, como Pablo; sin conexión no está probado.
 
 ## Instalación
 
@@ -33,17 +33,17 @@ y `herdr server reload-config` para cargarlo. Para instalar una versión nueva d
 
 - **F9** lee la última respuesta terminada del agente del panel activo. Si el agente está trabajando, lee la anterior.
 - **F9 otra vez**, mientras lee, la corta.
-- Los errores, como un panel sin agente, salen como notificación de Windows.
+- Los errores, como un panel sin agente, salen como notificación de Herdr, que llega a Windows si Herdr tiene `[ui.toast] delivery = "system"`.
 - `read-reply --pane w1:p2 --print` escribe el texto tal como lo leería, sin leerlo. Sirve para revisar cómo queda una respuesta.
 
 ## Cómo funciona
 
 1. Herdr pasa a sus atajos el panel activo en `HERDR_ACTIVE_PANE_ID`, y `herdr agent get` dice qué agente hay en él y cuál es su sesión (`herdr.py`).
 2. La respuesta sale de la transcripción de esa sesión, que se lee desde el final porque alguna pasa de 600 MB (`transcripts.py`):
-   - Claude Code: el último mensaje que cerró un turno, en `~/.claude/projects/`.
-   - Codex: el último mensaje de su última tarea terminada, en `~/.codex/sessions/`.
+   - Claude Code: el último mensaje que cerró un turno, en `~/.claude/projects/` (o bajo `CLAUDE_CONFIG_DIR`).
+   - Codex: el último mensaje de su última tarea terminada, en `~/.codex/sessions/` (o bajo `CODEX_HOME`).
 3. pandoc convierte el Markdown en párrafos para el oído: sin marcas, con los bloques de código anunciados en vez de deletreados, las tablas fila a fila y los enlaces por su texto (`speech_text.py`).
-4. Edge, sin ventana, los lee con la Web Speech API estándar, que en Edge incluye las voces naturales de Microsoft. Un servidor HTTP efímero en `127.0.0.1` le pasa a la página el texto y la orden de parar. La página se cierra al acabar, y Edge con ella (`player.py`, `player.html`).
+4. Edge, sin ventana, los lee con la Web Speech API estándar, que en Edge incluye las voces naturales de Microsoft. Un servidor HTTP efímero en `127.0.0.1` le pasa a la página el texto y la orden de parar. La página se cierra al acabar, y Edge con ella. Si una voz online falla, repite el fragmento con una local y sigue con ella (`player.py`, `player.html`).
 5. Una segunda pulsación encuentra ocupado el bloqueo de la lectura en curso y le pide que pare (`cli.py`).
 
 Deja dos cosas fuera del repositorio: un perfil propio de Edge en `%LOCALAPPDATA%\read-reply\edge-profile`, de unos 16 MB y aparte del tuyo, y el bloqueo en `$XDG_RUNTIME_DIR/read-reply/`.
@@ -64,10 +64,13 @@ Deja dos cosas fuera del repositorio: un perfil propio de Edge en `%LOCALAPPDATA
 
 ```bash
 uv sync
-uv run ruff format && uv run ruff check && uv run mypy && uv run pytest
+git config core.hooksPath .githooks   # una vez por copia del repositorio
+scripts/check                         # formato, lint, tipos y pruebas
 ```
 
-La CI lanza esas mismas comprobaciones en cada pull request. `uv` solo instala versiones publicadas hace al menos dos semanas (`exclude-newer` en `pyproject.toml`): una versión maliciosa suele detectarse y retirarse en días.
+No hay CI, para no gastar minutos de GitHub Actions, que están desactivadas en el repositorio. En su lugar, el hook `pre-push` lanza `scripts/check` antes de cada push y lo rechaza si falla o si hay cambios sin commit. Las pruebas necesitan pandoc.
+
+`uv` solo instala versiones publicadas hace al menos dos semanas (`exclude-newer` en `pyproject.toml`): una versión maliciosa suele detectarse y retirarse en días.
 
 ### Probar que suena
 

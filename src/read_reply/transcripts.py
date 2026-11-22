@@ -23,12 +23,15 @@ SESSION_ID = re.compile(r"[0-9A-Za-z][0-9A-Za-z_-]*")
 def last_reply(agent: Agent, home: Path | None = None) -> str:
     """The last finished reply of the agent, as the Markdown it wrote."""
     home = home or Path.home()
+    # The same variables that move the data of each agent.
+    claude_dir = Path(os.environ.get("CLAUDE_CONFIG_DIR") or home / ".claude")
+    codex_dir = Path(os.environ.get("CODEX_HOME") or home / ".codex")
     sources: dict[str, tuple[Path, str, Extractor]] = {
         # ~/.claude/projects/<project>/<session>.jsonl
-        "claude": (home / ".claude" / "projects", "*/{}.jsonl", claude_reply),
+        "claude": (claude_dir / "projects", "*/{}.jsonl", claude_reply),
         # ~/.codex/sessions/<year>/<month>/<day>/rollout-<time>-<session>.jsonl
         "codex": (
-            home / ".codex" / "sessions",
+            codex_dir / "sessions",
             "*/*/*/rollout-*-{}.jsonl",
             codex_reply,
         ),
@@ -101,11 +104,11 @@ def claude_reply(lines: Iterator[bytes]) -> str | None:
 def message_texts(message: dict[str, Any]) -> list[str]:
     content = message.get("content")
     if isinstance(content, str):
-        return [content]
+        return [content] if content.strip() else []
     return [
         part["text"]
         for part in content or []
-        if part.get("type") == "text" and part.get("text")
+        if part.get("type") == "text" and str(part.get("text") or "").strip()
     ]
 
 
@@ -127,6 +130,6 @@ def codex_reply(lines: Iterator[bytes]) -> str | None:
 def parse_json(line: bytes) -> dict[str, Any] | None:
     try:
         value = json.loads(line)
-    except json.JSONDecodeError:
+    except ValueError:  # bad JSON or bad UTF-8
         return None  # e.g. a line the agent is still writing
     return value if isinstance(value, dict) else None

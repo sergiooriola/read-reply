@@ -3,17 +3,16 @@
 Herdr passes the pane that was focused when the key was pressed in
 HERDR_ACTIVE_PANE_ID. A press reads the last reply of the agent in it; a
 press while it is reading stops it. A key has no terminal, so errors also
-show up as notifications through notify-send.
+show up as Herdr notifications.
 """
 
 import argparse
 import fcntl
 import os
-import shutil
-import subprocess
 import sys
 from pathlib import Path
 
+from read_reply import herdr
 from read_reply.errors import UserError
 from read_reply.herdr import agent_in
 from read_reply.player import Player, request_stop
@@ -57,7 +56,10 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
 
 
 def reply_chunks(pane: str) -> list[str]:
-    return speech_chunks(last_reply(agent_in(pane)))
+    chunks = speech_chunks(last_reply(agent_in(pane)))
+    if not chunks:
+        raise UserError("La respuesta no tiene texto que leer.")
+    return chunks
 
 
 def read_or_stop(pane: str, state: Path) -> None:
@@ -77,11 +79,16 @@ def read_or_stop(pane: str, state: Path) -> None:
 
 def state_dir() -> Path:
     """Where the lock and the stop address of the reading in progress live."""
-    runtime = os.environ.get("XDG_RUNTIME_DIR") or f"/tmp/read-reply-{os.getuid()}"
-    return Path(runtime) / "read-reply"
+    runtime = os.environ.get("XDG_RUNTIME_DIR")
+    # Without one, a folder of the person's own: a shared /tmp is not safe.
+    return (
+        Path(runtime) / "read-reply"
+        if runtime
+        else Path.home() / ".cache" / "read-reply"
+    )
 
 
 def notify(message: str) -> None:
     print(f"read-reply: {message}", file=sys.stderr)
-    if not sys.stderr.isatty() and shutil.which("notify-send"):
-        subprocess.run(["notify-send", NOTIFICATION_TITLE, message], check=False)
+    if not sys.stderr.isatty():
+        herdr.notify(NOTIFICATION_TITLE, message)

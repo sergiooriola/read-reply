@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 
 from read_reply.errors import UserError
-from read_reply.herdr import Agent, agent_in
+from read_reply.herdr import Agent, agent_in, notify
 
 
 def fake_herdr(
@@ -47,3 +47,27 @@ def test_agent_in_explains_an_agent_without_a_session(
 
     with pytest.raises(UserError, match="qué conversación tiene"):
         agent_in("w1:p1")
+
+
+def test_notify_shows_a_herdr_notification(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls = tmp_path / "calls"
+    script = tmp_path / "herdr"
+    script.write_text(f'#!/bin/sh\nprintf "%s\\n" "$@" > {calls}\n')
+    script.chmod(0o755)
+    monkeypatch.setenv("HERDR_BIN_PATH", str(script))
+
+    notify("Leer respuesta", "Sin agente.")
+
+    assert calls.read_text().splitlines() == [
+        "notification",
+        "show",
+        "Leer respuesta",
+        "--body",
+        "Sin agente.",
+    ]
+
+
+def test_notify_without_herdr_does_nothing() -> None:
+    notify("Leer respuesta", "Sin agente.")

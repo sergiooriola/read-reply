@@ -12,28 +12,37 @@ import secrets
 import subprocess
 import threading
 import time
+from contextlib import suppress
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib.resources import files
 from json import dumps
 from pathlib import Path
 from types import TracebackType
-from typing import Any, Self
+from typing import Any, Protocol, Self
 from urllib.parse import urlsplit
-from urllib.request import Request, urlopen
+from urllib.request import ProxyHandler, Request, build_opener
 
 from read_reply.errors import UserError
 
 EDGE = Path("/mnt/c/Program Files (x86)/Microsoft/Edge/Application/msedge.exe")
-# The first voice that Edge offers wins.
-# Álvaro needs internet; Pablo comes with Windows.
+# The first voice that Edge offers wins. Álvaro needs internet; the page falls
+# back to a local voice, such as Pablo, when an online one fails.
 VOICES = (
     "Microsoft Álvaro Online (Natural) - Spanish (Spain)",
     "Microsoft Pablo - Spanish (Spain)",
 )
 RATE = 1.0
-EDGE_START_TIMEOUT_S = 20
-STOP_GRACE_S = 3
+EDGE_START_TIMEOUT_S = 20.0
+STOP_GRACE_S = 3.0
+POLL_INTERVAL_S = 0.2
 STOP_URL_FILE = "stop-url"
+
+
+class Process(Protocol):
+    """The part of subprocess.Popen that waiting for Edge needs."""
+
+    def poll(self) -> int | None: ...
+    def wait(self, timeout: float | None = None) -> int: ...
 
 
 class Player:
@@ -59,7 +68,10 @@ class Player:
 
     def __enter__(self) -> Self:
         threading.Thread(target=self._server.serve_forever, daemon=True).start()
-        self._stop_url_file.write_text(self.url + "stop")
+        # Written whole, so that a second press never reads half of it.
+        partial = self._stop_url_file.with_suffix(".partial")
+        partial.write_text(self.url + "stop")
+        partial.replace(self._stop_url_file)
         return self
 
     def __exit__(
@@ -101,17 +113,7 @@ class Player:
             cwd="/mnt/c",  # Windows programs need a Windows working directory
         )
         try:
-            if not self._page_loaded.wait(EDGE_START_TIMEOUT_S):
-                raise UserError("Edge no ha arrancado a tiempo.")
-            stop_deadline: float | None = None
-            while not self._finished.wait(0.2) and edge.poll() is None:
-                if self.stop_requested:
-                    stop_deadline = stop_deadline or time.monotonic() + STOP_GRACE_S
-                    if time.monotonic() > stop_deadline:
-                        break  # the page did not react; Edge is closed below
-            edge.wait(timeout=STOP_GRACE_S)
-        except subprocess.TimeoutExpired:
-            pass
+            self.wait_for(edge)
         finally:
             if edge.poll() is None:
                 stop_edge(profile)
@@ -119,6 +121,28 @@ class Player:
         if self._errors:
             errors = ", ".join(sorted(set(self._errors)))
             raise UserError(f"Edge no ha podido leerla: {errors}.")
+
+    def wait_for(self, edge: Process) -> None:
+        """Returns once the page has finished, or once a stop has had its time.
+
+        Edge may still run on return after a stop; the caller closes it.
+        """
+        start_deadline = time.monotonic() + EDGE_START_TIMEOUT_S
+        stop_deadline: float | None = None
+        while not self._finished.wait(POLL_INTERVAL_S):
+            edge_exited = edge.poll() is not None
+            if self.stop_requested:
+                if edge_exited or not self._page_loaded.is_set():
+                    return  # nothing more will be heard
+                stop_deadline = stop_deadline or time.monotonic() + STOP_GRACE_S
+                if time.monotonic() > stop_deadline:
+                    return  # the page did not react
+            elif edge_exited:
+                raise UserError("Edge se ha cerrado antes de terminar de leer.")
+            elif not self._page_loaded.is_set() and time.monotonic() > start_deadline:
+                raise UserError("Edge no ha arrancado a tiempo.")
+        with suppress(subprocess.TimeoutExpired):
+            edge.wait(timeout=STOP_GRACE_S)  # the page closed, so Edge is exiting
 
     def _handler(self, prefix: str) -> type[BaseHTTPRequestHandler]:
         """The request handler of the page's server, under a secret path."""
@@ -175,25 +199,40 @@ class Player:
         return Handler
 
 
-def request_stop(state_dir: Path) -> None:
-    """Asks the reading in progress, if any, to stop."""
+def request_stop(state_dir: Path, wait_s: float = 1.0) -> None:
+    """Asks the reading in progress to stop.
+
+    A reading that has just started publishes its stop address within
+    milliseconds, so a missing address is looked for again for a moment.
+    """
+    deadline = time.monotonic() + wait_s
+    while not (url := read_stop_url(state_dir)) and time.monotonic() < deadline:
+        time.sleep(0.05)
+    if not url:
+        return  # no reading, or it is ending
+    # Straight to 127.0.0.1: an http_proxy setting must not take the request away.
+    opener = build_opener(ProxyHandler({}))
+    with suppress(OSError):  # the reading ended meanwhile
+        opener.open(Request(url, method="POST"), timeout=2).close()
+
+
+def read_stop_url(state_dir: Path) -> str:
     try:
-        url = (state_dir / STOP_URL_FILE).read_text()
-        urlopen(Request(url, method="POST"), timeout=2).close()
-    except OSError:
-        pass  # it is starting or ending; another press will do
+        return (state_dir / STOP_URL_FILE).read_text().strip()
+    except FileNotFoundError:
+        return ""
 
 
 def edge_profile() -> str:
     """A dedicated Edge profile in %LOCALAPPDATA%, apart from the person's own."""
+    # /u makes cmd.exe write UTF-16, whatever its code page, for paths with "é".
     result = subprocess.run(
-        ["cmd.exe", "/d", "/c", "echo %LOCALAPPDATA%"],
+        ["cmd.exe", "/d", "/u", "/c", "echo %LOCALAPPDATA%"],
         capture_output=True,
-        text=True,
         cwd="/mnt/c",
         check=False,
     )
-    local_app_data = result.stdout.strip()
+    local_app_data = result.stdout.decode("utf-16-le", errors="replace").strip()
     if not re.match(r"^[A-Za-z]:\\", local_app_data):
         raise UserError("No encuentro la carpeta de datos de Windows (%LOCALAPPDATA%).")
     return local_app_data + r"\read-reply\edge-profile"

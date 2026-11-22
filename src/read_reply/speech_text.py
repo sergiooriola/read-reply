@@ -89,7 +89,8 @@ def spoken_table(table: list[Any]) -> Iterator[str]:
         rows += body[2] + body[3]  # intermediate head rows, then body rows
     rows += foot[1]
     for _row_attr, cells in rows:
-        row = ", ".join(" ".join(spoken_blocks(cell[4])) for cell in cells).strip(", ")
+        texts = (" ".join(filter(None, spoken_blocks(cell[4]))) for cell in cells)
+        row = ", ".join(filter(None, texts))
         if row:
             yield row if row.endswith((".", "!", "?", "…")) else row + "."
 

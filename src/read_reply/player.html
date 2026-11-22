@@ -7,42 +7,46 @@
   const base = location.pathname;
   const post = (path, body = "") =>
     fetch(base + path, { method: "POST", body }).catch(() => {});
+  // What a stop request makes an utterance report; not a failure.
+  const STOP_ERRORS = ["interrupted", "canceled"];
+
+  const voiceNamed = (name) =>
+    speechSynthesis.getVoices().find((voice) => voice.name === name);
 
   // Edge loads its online voices after the page and announces them with
   // "voiceschanged"; wait a few seconds for the preferred one before falling back.
   function pickVoice(preferred) {
     return new Promise((resolve) => {
-      const find = (names) => {
-        const voices = speechSynthesis.getVoices();
-        const named = (name) => voices.find((voice) => voice.name === name);
-        return names.map(named).find(Boolean);
-      };
       const tryPreferred = () => {
-        const voice = find(preferred.slice(0, 1));
+        const voice = voiceNamed(preferred[0]);
         if (voice) resolve(voice);
       };
       speechSynthesis.addEventListener("voiceschanged", tryPreferred);
       tryPreferred();
-      setTimeout(() => {
-        const spanish = speechSynthesis.getVoices().find((voice) => voice.lang === "es-ES");
-        resolve(find(preferred) ?? spanish ?? null);
-      }, 5000);
+      setTimeout(() => resolve(preferred.map(voiceNamed).find(Boolean) ?? null), 5000);
     });
   }
 
+  // A voice that works without internet: the first local one preferred, or
+  // any local Spanish (Spain) voice.
+  function localVoice(preferred) {
+    const local = (voice) => voice?.localService;
+    const spanish = speechSynthesis
+      .getVoices()
+      .find((voice) => local(voice) && voice.lang === "es-ES");
+    return preferred.map(voiceNamed).find(local) ?? spanish ?? null;
+  }
+
+  // Resolves with the error that stopped the utterance, or null.
   function say(text, voice, rate) {
     return new Promise((resolve) => {
       const utterance = new SpeechSynthesisUtterance(text);
       utterance.lang = voice?.lang ?? "es-ES";
       if (voice) utterance.voice = voice;
       utterance.rate = rate;
-      utterance.onend = () => resolve();
-      utterance.onerror = (event) => {
-        // "interrupted" and "canceled" are what a stop request causes.
-        const stopped = ["interrupted", "canceled"].includes(event.error);
-        if (!stopped) post("error", event.error);
-        resolve();
-      };
+      utterance.onend = () => resolve(null);
+      utterance.onerror = (event) =>
+        resolve(STOP_ERRORS.includes(event.error) ? null : event.error);
       speechSynthesis.speak(utterance);
     });
   }
@@ -62,10 +66,19 @@
       }
     }, 200);
     try {
-      const voice = await pickVoice(reply.voices);
+      let voice = await pickVoice(reply.voices);
       for (const text of reply.chunks) {
         if (stopped) break;
-        await say(text, voice, reply.rate);
+        let error = await say(text, voice, reply.rate);
+        // Edge can list its online voices and still fail to reach them:
+        // repeat the chunk with a local voice, and keep that voice.
+        const fallback = error && !stopped && !voice?.localService && localVoice(reply.voices);
+        if (fallback) {
+          voice = fallback;
+          error = await say(text, voice, reply.rate);
+        }
+        // Awaited, so that the error arrives before "finished".
+        if (error && !stopped) await post("error", error);
       }
     } finally {
       clearInterval(poll);

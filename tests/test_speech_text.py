@@ -32,6 +32,12 @@ def test_tables_are_read_row_by_row() -> None:
     assert speech_chunks(markdown) == ["Opción, Nota.", "Uno, Bien.", "Dos."]
 
 
+def test_empty_cells_leave_no_gaps() -> None:
+    markdown = "| A | B | C |\n|---|---|---|\n| Uno | | Tres |\n"
+
+    assert speech_chunks(markdown) == ["A, B, C.", "Uno, Tres."]
+
+
 def test_headings_and_list_items_are_separate_chunks() -> None:
     markdown = "# Título\n\n- Primero\n- Segundo\n\n1. Uno\n2. Dos\n\n> Cita"
 

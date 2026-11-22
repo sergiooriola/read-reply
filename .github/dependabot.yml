@@ -1,0 +1,28 @@
+# Monthly version updates, grouped into one pull request per ecosystem, and
+# never for a release younger than 14 days, the project's cooldown.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    cooldown:
+      default-days: 14
+    groups:
+      github-actions:
+        patterns: ["*"]
+    commit-message:
+      prefix: ci
+
+  - package-ecosystem: uv
+    directory: /
+    schedule:
+      interval: monthly
+    cooldown:
+      default-days: 14
+    groups:
+      python:
+        patterns: ["*"]
+    commit-message:
+      prefix: build
+      include: scope

@@ -1,0 +1,97 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>read-reply</title>
+<script>
+  "use strict";
+  // Speaks the chunks that read-reply serves, then closes, which ends headless Edge.
+  const base = location.pathname;
+  const post = (path, body = "") =>
+    fetch(base + path, { method: "POST", body }).catch(() => {});
+  // What a stop request makes an utterance report; not a failure.
+  const STOP_ERRORS = ["interrupted", "canceled"];
+
+  const voiceNamed = (name) =>
+    speechSynthesis.getVoices().find((voice) => voice.name === name);
+
+  // Edge loads its online voices after the page and announces them with
+  // "voiceschanged"; wait a few seconds for the preferred one before falling back.
+  function pickVoice(preferred) {
+    return new Promise((resolve) => {
+      const tryPreferred = () => {
+        const voice = voiceNamed(preferred[0]);
+        if (voice) resolve(voice);
+      };
+      speechSynthesis.addEventListener("voiceschanged", tryPreferred);
+      tryPreferred();
+      setTimeout(() => resolve(preferred.map(voiceNamed).find(Boolean) ?? null), 5000);
+    });
+  }
+
+  // A voice that works without internet: the first local one preferred,
+  // then any local voice of Spain, then any local Spanish one.
+  function localVoice(preferred) {
+    const local = (voice) => voice?.localService;
+    const voices = speechSynthesis.getVoices().filter(local);
+    return (
+      preferred.map(voiceNamed).find(local) ??
+      voices.find((voice) => voice.lang === "es-ES") ??
+      voices.find((voice) => voice.lang.startsWith("es")) ??
+      null
+    );
+  }
+
+  // Resolves with the error that stopped the utterance, or null.
+  function say(text, voice, rate) {
+    return new Promise((resolve) => {
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = voice?.lang ?? "es-ES";
+      if (voice) utterance.voice = voice;
+      utterance.rate = rate;
+      utterance.onend = () => resolve(null);
+      utterance.onerror = (event) =>
+        resolve(STOP_ERRORS.includes(event.error) ? null : event.error);
+      speechSynthesis.speak(utterance);
+    });
+  }
+
+  async function main() {
+    const reply = await (await fetch(base + "reply")).json();
+    let stopped = false;
+    const stop = () => {
+      stopped = true;
+      speechSynthesis.cancel();
+    };
+    const poll = setInterval(async () => {
+      try {
+        if ((await (await fetch(base + "state")).json()).stop) stop();
+      } catch {
+        stop(); // read-reply is gone
+      }
+    }, 200);
+    try {
+      let voice = await pickVoice(reply.voices);
+      for (const text of reply.chunks) {
+        if (stopped) break;
+        let error = await say(text, voice, reply.rate);
+        // Edge can list its online voices and still fail to reach them:
+        // repeat the chunk with a local voice, and keep that voice.
+        const fallback = error && !stopped && !voice?.localService && localVoice(reply.voices);
+        if (fallback) {
+          voice = fallback;
+          error = await say(text, voice, reply.rate);
+        }
+        // Awaited, so that the error arrives before "finished".
+        if (error && !stopped) await post("error", error);
+      }
+    } finally {
+      clearInterval(poll);
+    }
+  }
+
+  main()
+    .catch((error) => post("error", String(error)))
+    .finally(async () => {
+      await post("finished");
+      window.close();
+    });
+</script>

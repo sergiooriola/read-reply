@@ -26,8 +26,10 @@ def test_links_are_read_by_their_text_or_their_site() -> None:
         ("<https://españa.es/ayuda>", "españa.es"),
         ("[el informe](file:///tmp/informe.html)", "el informe"),
         ("[javascript:x](javascript:x)", "javascript:x"),
+        ("[https://a.es/x](https://b.es)", "a.es"),
+        ("[ftp://a.es/x (solo lectura)](https://b.es)", "ftp://a.es/x (solo lectura)"),
     ],
-    ids=["non-ascii-site", "local-file", "any-scheme"],
+    ids=["non-ascii-site", "local-file", "any-scheme", "address-text", "prose-text"],
 )
 def test_links_are_read_as_written(markdown: str, spoken: str) -> None:
     assert speech_chunks(markdown) == [spoken]

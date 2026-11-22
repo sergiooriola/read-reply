@@ -107,13 +107,13 @@ def spoken_inlines(inlines: list[SyntaxTreeNode]) -> str:
 
 
 def spoken_link(link: SyntaxTreeNode) -> str:
-    """The link text, or just the site when the text is an address.
+    """The link text, or just the site when the whole text is an address.
 
     The site comes from the text as written: the destination is encoded for a
     web page, with "españa.es" as "xn--espaa-rta.es".
     """
     text = spoken_inlines(link.children)
-    if "://" in text:
+    if re.fullmatch(r"\S+://\S+", text):
         with suppress(ValueError):  # not a valid address after all
             return urlsplit(text).hostname or text
     return text

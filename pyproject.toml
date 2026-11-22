@@ -10,7 +10,7 @@ dependencies = [
     # Upper bounds: speech_text.py reads their syntax tree by node names, which
     # a major release (a minor one, in 0.x) may change.
     "markdown-it-py>=4.2.0,<5",
-    "mdit-py-plugins>=0.6.1,<0.7",
+    "mdit-py-plugins>=0.6.1,<0.8",
 ]
 
 [project.scripts]

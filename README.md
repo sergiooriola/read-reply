@@ -82,3 +82,7 @@ uv run read-reply --pane <panel>
 ```
 
 En silencio, el pico ronda 0,001. Mientras Álvaro habla, sube por encima de 0,1.
+
+## Licencia
+
+[MIT](LICENSE).

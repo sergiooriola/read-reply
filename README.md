@@ -68,7 +68,7 @@ git config core.hooksPath .githooks   # una vez por copia del repositorio
 scripts/check                         # formato, lint, tipos y pruebas
 ```
 
-No hay CI, para no gastar minutos de GitHub Actions, que están desactivadas en el repositorio. En su lugar, el hook `pre-push` lanza `scripts/check` antes de cada push y lo rechaza si falla o si hay cambios sin commit. Las pruebas necesitan pandoc.
+La CI (GitHub Actions, `.github/workflows/ci.yml`) lanza `scripts/check` en cada PR y en cada push a `main`; en un repositorio público no gasta minutos. El hook `pre-push` lo lanza también antes de cada push, para enterarte antes de subir, y rechaza el push si falla o si hay cambios sin commit. Las pruebas necesitan pandoc.
 
 `uv` solo instala versiones publicadas hace al menos dos semanas (`exclude-newer` en `pyproject.toml`): una versión maliciosa suele detectarse y retirarse en días.
 

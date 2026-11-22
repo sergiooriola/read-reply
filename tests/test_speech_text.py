@@ -57,6 +57,28 @@ def test_raw_html_is_dropped() -> None:
     assert speech_chunks(markdown) == ["Texto importante.", "Dentro"]
 
 
+@pytest.mark.parametrize(
+    ("markdown", "spoken"),
+    [
+        ("- [x] Hecho\n- [ ] Pendiente", ["Hecho", "Pendiente"]),
+        ("Texto[^1].\n\n[^1]: La nota.", ["Texto."]),
+        ("Mira ![un gráfico](a.png).", ["Mira un gráfico."]),
+        ("> [!WARNING]\n> Ojo.", ["Warning", "Ojo."]),
+    ],
+    ids=["task-list", "footnote", "image", "alert"],
+)
+def test_github_extensions_are_read_without_their_marks(
+    markdown: str, spoken: list[str]
+) -> None:
+    assert speech_chunks(markdown) == spoken
+
+
+def test_dollar_signs_are_prices_not_formulas() -> None:
+    markdown = "Llevas 0,99 $ de 5 $; el plan cuesta 30 $/mes o 288 $/año."
+
+    assert speech_chunks(markdown) == [markdown]
+
+
 def test_rules_and_empty_paragraphs_say_nothing() -> None:
     assert speech_chunks("Uno\n\n---\n\nDos") == ["Uno", "Dos"]
 

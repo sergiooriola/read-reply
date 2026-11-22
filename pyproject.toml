@@ -6,7 +6,10 @@ readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
 requires-python = ">=3.14"
-dependencies = []
+dependencies = [
+    "markdown-it-py>=4.2.0",
+    "mdit-py-plugins>=0.6.1",
+]
 
 [project.scripts]
 read-reply = "read_reply.cli:main"

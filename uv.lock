@@ -316,8 +316,8 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "markdown-it-py", specifier = ">=4.2.0" },
-    { name = "mdit-py-plugins", specifier = ">=0.6.1" },
+    { name = "markdown-it-py", specifier = ">=4.2.0,<5" },
+    { name = "mdit-py-plugins", specifier = ">=0.6.1,<0.7" },
 ]
 
 [package.metadata.requires-dev]

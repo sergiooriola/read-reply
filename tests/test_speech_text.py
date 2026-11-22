@@ -20,6 +20,29 @@ def test_links_are_read_by_their_text_or_their_site() -> None:
     assert speech_chunks(markdown) == ["Mira la guía y github.com."]
 
 
+@pytest.mark.parametrize(
+    ("markdown", "spoken"),
+    [
+        ("<https://españa.es/ayuda>", "españa.es"),
+        ("[el informe](file:///tmp/informe.html)", "el informe"),
+        ("[javascript:x](javascript:x)", "javascript:x"),
+    ],
+    ids=["non-ascii-site", "local-file", "any-scheme"],
+)
+def test_links_are_read_as_written(markdown: str, spoken: str) -> None:
+    assert speech_chunks(markdown) == [spoken]
+
+
+def test_deep_nesting_loses_no_text() -> None:
+    levels = 25
+    markdown = "\n".join("  " * i + f"- Nivel {i}" for i in range(levels))
+
+    assert speech_chunks(markdown + "\n\nFin.") == [
+        *(f"Nivel {i}" for i in range(levels)),
+        "Fin.",
+    ]
+
+
 def test_code_blocks_are_announced_not_spelled_out() -> None:
     markdown = "Antes.\n\n```bash\necho hola\n```\n\nDespués."
 
@@ -62,10 +85,12 @@ def test_raw_html_is_dropped() -> None:
     [
         ("- [x] Hecho\n- [ ] Pendiente", ["Hecho", "Pendiente"]),
         ("Texto[^1].\n\n[^1]: La nota.", ["Texto."]),
+        ("Texto[^1].\n\n[^1]: Nota.\n    > [^2]: Otra.", ["Texto."]),
         ("Mira ![un gráfico](a.png).", ["Mira un gráfico."]),
-        ("> [!WARNING]\n> Ojo.", ["Warning", "Ojo."]),
+        ("Mira ![I&amp;D](a.png).", ["Mira I&D."]),
+        ("> [!WARNING]\n> Ojo.", ["Advertencia", "Ojo."]),
     ],
-    ids=["task-list", "footnote", "image", "alert"],
+    ids=["task-list", "footnote", "nested-footnote", "image", "image-entity", "alert"],
 )
 def test_github_extensions_are_read_without_their_marks(
     markdown: str, spoken: list[str]

@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# Installs the read-reply command, or reinstalls it after a change, with the
+# exact dependency versions of uv.lock: `uv tool install` on its own reads
+# neither the lockfile nor the project's settings, such as exclude-newer.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+constraints=$(mktemp)
+trap 'rm -f "$constraints"' EXIT
+uv export --frozen --no-dev --no-emit-project --no-hashes --quiet \
+  --output-file "$constraints"
+uv tool install --reinstall --constraints "$constraints" .

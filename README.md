@@ -14,10 +14,11 @@ Funciona con Claude Code y Codex dentro de [Herdr](https://herdr.dev), en WSL so
 ## Instalación
 
 ```bash
-uv tool install ~/dev/read-reply
+git clone https://github.com/sergiooriola/read-reply ~/dev/read-reply
+~/dev/read-reply/scripts/install
 ```
 
-El comando `read-reply` queda en `~/.local/bin`. Después, el atajo en `~/.config/herdr/config.toml`:
+`scripts/install` lo instala con `uv tool install` y las versiones exactas de `uv.lock`, que `uv tool install` por sí solo no lee. El comando `read-reply` queda en `~/.local/bin`. Después, el atajo en `~/.config/herdr/config.toml`:
 
 ```toml
 [[keys.command]]
@@ -27,7 +28,7 @@ command = "read-reply"
 description = "Leer en voz alta la última respuesta del agente (otra vez: parar)"
 ```
 
-y `herdr server reload-config` para cargarlo. Los errores salen como notificaciones de Herdr, que de serie están desactivadas: activa `[ui.toast] delivery = "herdr"` para verlas dentro de Herdr, o `"system"` para verlas como notificaciones de Windows. Para instalar una versión nueva del código: `uv tool install --reinstall ~/dev/read-reply`.
+y `herdr server reload-config` para cargarlo. Los errores salen como notificaciones de Herdr, que de serie están desactivadas: activa `[ui.toast] delivery = "herdr"` para verlas dentro de Herdr, o `"system"` para verlas como notificaciones de Windows. Para instalar una versión nueva del código, `scripts/install` otra vez.
 
 ## Uso
 
@@ -63,7 +64,7 @@ Deja tres cosas fuera del repositorio: un perfil propio de Edge en `%LOCALAPPDAT
 - **La voz de Edge:** es la voz masculina en español de España más realista que se puede usar gratis y sin cuenta. Azure Speech da las mismas voces con API oficial, pero su plan gratuito (500.000 caracteres al mes) se queda corto. `edge-tts` usa el servicio interno de Edge, y Microsoft lo rompió a propósito en octubre de 2026.
 - **La ventana, de Edge:** es la misma página que lee, así que no hace falta ninguna dependencia nueva. Un panel emergente de Herdr taparía el del agente y se quedaría con el teclado.
 - **Pausar cortando:** `speechSynthesis.pause()` no hace nada con Álvaro: sigue hablando (medido en #7). Cortar y retomar sí funciona, a cambio de menos de un segundo de silencio antes de seguir.
-- **markdown-it-py:** un analizador de Markdown de verdad, en vez de expresiones regulares. Su plugin `gfm` (de [mdit-py-plugins](https://github.com/executablebooks/mdit-py-plugins), del mismo equipo) entiende el Markdown de GitHub, que es el que escriben los agentes. Se instala con el paquete y `uv.lock` fija su versión: antes era pandoc, un programa aparte cuya versión dependía de cada máquina.
+- **markdown-it-py:** un analizador de Markdown de verdad, en vez de expresiones regulares. Su plugin `gfm` (de [mdit-py-plugins](https://github.com/executablebooks/mdit-py-plugins), del mismo equipo) entiende el Markdown de GitHub, que es el que escriben los agentes. Se instala con el paquete y `scripts/install` toma su versión de `uv.lock`: antes era pandoc, un programa aparte cuya versión dependía de cada máquina.
 - **Ninguna dependencia más:** el resto es la biblioteca estándar de Python.
 
 ## Límites

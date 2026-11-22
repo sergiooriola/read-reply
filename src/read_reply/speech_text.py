@@ -7,6 +7,7 @@ tables row by row and links by their text.
 
 import re
 from collections.abc import Iterator
+from contextlib import suppress
 from urllib.parse import urlsplit
 
 from markdown_it import MarkdownIt
@@ -17,11 +18,39 @@ CODE_BLOCK_NOTICE = "Bloque de código omitido."
 # Longer paragraphs are spoken sentence by sentence, so that no single request
 # to the online voice carries minutes of audio.
 MAX_CHUNK_CHARS = 400
+# GitHub's alerts, by the names its documentation in Spanish gives them.
+ALERT_TITLES = {
+    "NOTE": "Nota",
+    "TIP": "Sugerencia",
+    "IMPORTANT": "Importante",
+    "WARNING": "Advertencia",
+    "CAUTION": "Precaución",
+}
 
-# GitHub Flavored Markdown, which is what the agents write. Raw HTML is parsed
-# as such so that it can be left out instead of read. No $math$: it would take
-# the text between two prices in dollars, "0,99 $ de 5 $", for a formula.
-PARSER = MarkdownIt("commonmark", {"html": True}).use(gfm_plugin)
+
+class SpeechParser(MarkdownIt):
+    """GitHub Flavored Markdown, which is what the agents write, parsed to be read.
+
+    Raw HTML is parsed as such so that it can be left out instead of read. No
+    $math$: it would take the text between two prices in dollars,
+    "0,99 $ de 5 $", for a formula.
+    """
+
+    def __init__(self) -> None:
+        # CommonMark's nesting limit, 20, drops everything after a list ten
+        # levels deep.
+        super().__init__("commonmark", {"html": True, "maxNesting": 100})
+        self.use(gfm_plugin)
+        # The notes stay where they are written, to be skipped: moving them to
+        # the end, as a web page does, fails on a note in a quote in a note.
+        self.disable("footnote_tail")
+
+    def validateLink(self, url: str) -> bool:
+        """Every link is valid here: none is rendered or followed, only read."""
+        return True
+
+
+PARSER = SpeechParser()
 
 
 def speech_chunks(markdown: str) -> list[str]:
@@ -35,15 +64,18 @@ def spoken_blocks(blocks: list[SyntaxTreeNode]) -> Iterator[str]:
     """One string per paragraph to speak, from the block nodes."""
     for block in blocks:
         match block.type:
-            case "paragraph" | "heading" | "alert_title":
+            case "paragraph" | "heading":
                 yield spoken_inlines(block.children)
             case "fence" | "code_block":
                 yield CODE_BLOCK_NOTICE
             case "table":
                 yield from spoken_table(block)
-            case "footnote_block":
-                pass  # the notes are left out of the reading
-            case _:  # lists, quotes and alerts hold blocks; rules and raw HTML, none
+            case "alert":  # its own title is GitHub's, in English
+                yield ALERT_TITLES.get(str(block.meta.get("kind")), "")
+                yield from spoken_blocks(block.children)
+            case "alert_title" | "footnote_reference":
+                pass  # said above; the notes are left out of the reading
+            case _:  # lists and quotes hold blocks; rules and raw HTML, none
                 yield from spoken_blocks(block.children)
 
 
@@ -61,7 +93,7 @@ def spoken_inlines(inlines: list[SyntaxTreeNode]) -> str:
     parts: list[str] = []
     for inline in inlines:
         match inline.type:
-            case "text" | "code_inline":
+            case "text" | "text_special" | "code_inline":
                 parts.append(inline.content)
             case "softbreak" | "hardbreak":
                 parts.append(" ")
@@ -75,12 +107,15 @@ def spoken_inlines(inlines: list[SyntaxTreeNode]) -> str:
 
 
 def spoken_link(link: SyntaxTreeNode) -> str:
-    """The link text, or just the site when the text is the address itself."""
-    text, url = spoken_inlines(link.children), str(link.attrs["href"])
-    if text in (url, url.removeprefix("mailto:")) or text.startswith(
-        ("http://", "https://")
-    ):
-        return urlsplit(url).hostname or text
+    """The link text, or just the site when the text is an address.
+
+    The site comes from the text as written: the destination is encoded for a
+    web page, with "españa.es" as "xn--espaa-rta.es".
+    """
+    text = spoken_inlines(link.children)
+    if "://" in text:
+        with suppress(ValueError):  # not a valid address after all
+            return urlsplit(text).hostname or text
     return text
 
 

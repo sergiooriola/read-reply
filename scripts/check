@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Runs every check of the project. The pre-push hook runs it too: this
-# repository has no CI, to save GitHub Actions minutes.
+# Runs every check of the project: the CI runs it, and so does the pre-push
+# hook, to find out before pushing.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 

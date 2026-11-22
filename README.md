@@ -70,7 +70,7 @@ scripts/check                         # formato, lint, tipos y pruebas
 
 La CI (GitHub Actions, `.github/workflows/ci.yml`) lanza `scripts/check` en cada PR y en cada push a `main`; en un repositorio público no gasta minutos. El hook `pre-push` lo lanza también antes de cada push, para enterarte antes de subir, y rechaza el push si falla o si hay cambios sin commit. Las pruebas necesitan pandoc.
 
-`uv` solo instala versiones publicadas hace al menos dos semanas (`exclude-newer` en `pyproject.toml`): una versión maliciosa suele detectarse y retirarse en días.
+`uv` solo instala versiones publicadas hace al menos dos semanas (`exclude-newer` en `pyproject.toml`): una versión maliciosa suele detectarse y retirarse en días. Dependabot propone una vez al mes las versiones nuevas de las dependencias y de las acciones de la CI, con la misma espera (`.github/dependabot.yml`).
 
 ### Probar que suena
 

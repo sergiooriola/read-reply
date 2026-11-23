@@ -34,6 +34,7 @@ def fake_powershell(monkeypatch: pytest.MonkeyPatch, script: Path, body: str) ->
     script.write_text("#!/bin/sh\n" + body)
     script.chmod(0o755)
     monkeypatch.setattr(desktop, "POWERSHELL", str(script))
+    monkeypatch.setattr(desktop, "WINDOWS_CWD", str(script.parent))  # not on WSL
 
 
 TERMINAL = {

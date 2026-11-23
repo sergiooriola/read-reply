@@ -23,6 +23,7 @@ from urllib.request import ProxyHandler, Request, build_opener
 
 from read_reply.desktop import (
     WINDOW_SIZE,
+    WINDOWS_CWD,
     Desktop,
     Terminal,
     powershell_command,
@@ -119,7 +120,7 @@ class Player:
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
-            cwd="/mnt/c",  # Windows programs need a Windows working directory
+            cwd=WINDOWS_CWD,
         )
         self._desktop.give_focus_back()
         try:
@@ -260,7 +261,7 @@ def edge_profile() -> str:
     result = subprocess.run(
         ["cmd.exe", "/d", "/u", "/c", "echo %LOCALAPPDATA%"],
         capture_output=True,
-        cwd="/mnt/c",
+        cwd=WINDOWS_CWD,
         check=False,
     )
     local_app_data = result.stdout.decode("utf-16-le", errors="replace").strip()
@@ -281,6 +282,6 @@ def stop_edge(profile: str) -> None:
     subprocess.run(
         powershell_command(script),
         capture_output=True,
-        cwd="/mnt/c",
+        cwd=WINDOWS_CWD,
         check=False,
     )

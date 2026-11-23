@@ -17,6 +17,8 @@ from types import TracebackType
 from typing import Self
 
 POWERSHELL = "powershell.exe"
+# Windows programs started from WSL need a Windows working directory.
+WINDOWS_CWD = "/mnt/c"
 # The window's size, in CSS pixels: player.html is laid out for it.
 WINDOW_SIZE = (300, 110)
 MARGIN = 8
@@ -74,7 +76,7 @@ class Desktop:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.DEVNULL,
                 text=True,
-                cwd="/mnt/c",  # Windows programs need a Windows working directory
+                cwd=WINDOWS_CWD,
             )
         return self
 

@@ -1,6 +1,6 @@
 # read-reply
 
-Lee en voz alta la última respuesta del agente de programación del panel activo de Herdr. Pulsas F9 y la oyes con Álvaro, la voz natural de Edge en español de España; vuelves a pulsar F9 y se calla. Nunca lee nada por su cuenta.
+Lee en voz alta la última respuesta del agente de programación del panel activo de Herdr. Pulsas F9 y la oyes con Álvaro, la voz natural de Edge en español de España; vuelves a pulsar F9 y se calla. Mientras lee, una ventana pequeña sobre el terminal permite pausarla, cambiar la velocidad y pararla. Nunca lee nada por su cuenta.
 
 Funciona con Claude Code y Codex dentro de [Herdr](https://herdr.dev), en WSL sobre Windows.
 
@@ -33,6 +33,12 @@ y `herdr server reload-config` para cargarlo. Los errores salen como notificacio
 
 - **F9** lee la última respuesta terminada del agente del panel activo. Si el agente está trabajando, lee la anterior.
 - **F9 otra vez**, mientras lee, la corta.
+- **La ventana**, arriba en el centro del terminal y por encima de las demás mientras lee, no se queda con el foco: sigues escribiendo donde estabas. Con un clic en ella:
+  - **Pausa y continuar** (o espacio). Al continuar, vuelve al principio de la frase.
+  - **− y +** (o las teclas − y +) cambian la velocidad, de 0,5× a 2×. Se recuerda para la próxima vez.
+  - **Parar** (o Esc, o cerrar la ventana).
+
+  ![La ventana de lectura: pausa, velocidad y parar, con la barra de progreso debajo](docs/controller.png)
 - Los errores, como un panel sin agente, salen como notificación de Herdr, que llega a Windows si Herdr tiene `[ui.toast] delivery = "system"`.
 - `read-reply --pane w1:p2 --print` escribe el texto tal como lo leería, sin leerlo. Sirve para revisar cómo queda una respuesta.
 
@@ -43,14 +49,18 @@ y `herdr server reload-config` para cargarlo. Los errores salen como notificacio
    - Claude Code: el último mensaje que cerró un turno, en `~/.claude/projects/` (o bajo `CLAUDE_CONFIG_DIR`).
    - Codex: el último mensaje de su última tarea terminada, en `~/.codex/sessions/` (o bajo `CODEX_HOME`).
 3. pandoc convierte el Markdown en párrafos para el oído: sin marcas, con los bloques de código anunciados en vez de deletreados, las tablas fila a fila y los enlaces por su texto (`speech_text.py`).
-4. Edge, sin ventana, los lee con la Web Speech API estándar, que en Edge incluye las voces naturales de Microsoft. Un servidor HTTP efímero en `127.0.0.1` le pasa a la página el texto y la orden de parar. La página se cierra al acabar, y Edge con ella. Si una voz online falla, repite el fragmento con una local y sigue con ella (`player.py`, `player.html`).
-5. Una segunda pulsación encuentra ocupado el bloqueo de la lectura en curso y le pide que pare (`cli.py`).
+4. Edge los lee con la Web Speech API estándar, que en Edge incluye las voces naturales de Microsoft, en una ventana de aplicación (`--app`) con los controles. Un servidor HTTP efímero en `127.0.0.1` le pasa a la página el texto y la orden de parar. La página se cierra al acabar, y Edge con ella (`player.py`, `player.html`).
+5. La página lee fragmento a fragmento (`reading.mjs`). Para pausar o cambiar la velocidad, corta el fragmento y vuelve a pedirlo desde el principio de la frase o desde la palabra en curso, que Edge le dice con eventos `boundary`. Si Álvaro falla, lo intenta otra vez con él y, si vuelve a fallar, sigue con una voz local.
+6. Mientras se prepara el texto, un script de PowerShell busca la ventana de Windows Terminal. Cuando se abre la de lectura, que reconoce por su perfil de Edge, la coloca arriba en el centro del terminal, por encima de las demás, y devuelve el foco a la ventana que lo tenía (`desktop.py`, `desktop.ps1`).
+7. Una segunda pulsación encuentra ocupado el bloqueo de la lectura en curso y le pide que pare (`cli.py`).
 
-Deja dos cosas fuera del repositorio: un perfil propio de Edge en `%LOCALAPPDATA%\read-reply\edge-profile`, de unos 16 MB y aparte del tuyo, y el bloqueo en `$XDG_RUNTIME_DIR/read-reply/`.
+Deja tres cosas fuera del repositorio: un perfil propio de Edge en `%LOCALAPPDATA%\read-reply\edge-profile`, de unos 16 MB y aparte del tuyo; la velocidad elegida, en `~/.local/state/read-reply/rate` (o bajo `XDG_STATE_HOME`), y el bloqueo, en `$XDG_RUNTIME_DIR/read-reply/`.
 
 ### Por qué así
 
 - **La voz de Edge:** es la voz masculina en español de España más realista que se puede usar gratis y sin cuenta. Azure Speech da las mismas voces con API oficial, pero su plan gratuito (500.000 caracteres al mes) se queda corto. `edge-tts` usa el servicio interno de Edge, y Microsoft lo rompió a propósito en octubre de 2026.
+- **La ventana, de Edge:** es la misma página que lee, así que no hace falta ninguna dependencia nueva. Un panel emergente de Herdr taparía el del agente y se quedaría con el teclado.
+- **Pausar cortando:** `speechSynthesis.pause()` no hace nada con Álvaro: sigue hablando (medido en #7). Cortar y retomar sí funciona, a cambio de menos de un segundo de silencio antes de seguir.
 - **pandoc:** un analizador de Markdown de verdad, en vez de expresiones regulares.
 - **Solo la biblioteca estándar de Python:** no hay dependencias que instalar ni que vigilar.
 
@@ -58,7 +68,9 @@ Deja dos cosas fuera del repositorio: un perfil propio de Edge en `%LOCALAPPDATA
 
 - Antigravity (`agy`) no está soportado: guarda sus conversaciones en bloques binarios de SQLite.
 - Las rutas y el código dentro de una frase se leen tal cual.
+- Al continuar tras una pausa o cambiar la velocidad, Álvaro tarda hasta un segundo en volver a hablar, y se nota el corte: es una voz online.
 - Depende de que Edge siga ofreciendo sus voces online a las páginas web.
+- La ventana se coloca sobre Windows Terminal. Con otro terminal, se abre sobre la ventana que tengas delante.
 
 ## Desarrollo
 
@@ -67,6 +79,8 @@ uv sync
 git config core.hooksPath .githooks   # una vez por copia del repositorio
 scripts/check                         # formato, lint, tipos y pruebas
 ```
+
+Las pruebas de la página (`tests/js`) corren en Node.js 24 o posterior, sin dependencias.
 
 La CI (GitHub Actions, `.github/workflows/ci.yml`) lanza `scripts/check` en cada PR y en cada push a `main`; en un repositorio público no gasta minutos. El hook `pre-push` lo lanza también antes de cada push, para enterarte antes de subir, y rechaza el push si falla o si hay cambios sin commit. Las pruebas necesitan pandoc.
 

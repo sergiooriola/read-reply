@@ -9,3 +9,10 @@ uv run ruff format --check
 uv run ruff check
 uv run mypy
 uv run pytest -q
+
+# The reading page's logic (src/read_reply/reading.mjs), in Node's test runner.
+if ! command -v node >/dev/null; then
+  echo "check: falta Node.js 24 o posterior, para las pruebas de tests/js." >&2
+  exit 1
+fi
+node --test --test-reporter=dot "tests/js/*.test.mjs"

@@ -20,7 +20,7 @@ POWERSHELL = "powershell.exe"
 # Windows programs started from WSL need a Windows working directory.
 WINDOWS_CWD = "/mnt/c"
 # The window's size, in CSS pixels: player.html is laid out for it.
-WINDOW_SIZE = (300, 110)
+WINDOW_SIZE = (340, 110)
 MARGIN = 8
 MONITOR_TIMEOUT_S = 3.0
 

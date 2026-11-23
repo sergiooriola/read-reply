@@ -4,13 +4,14 @@ import assert from "node:assert/strict";
 import { beforeEach, describe, test } from "node:test";
 
 import {
-  RATE_SETTLE_MS,
+  SETTLE_MS,
   RETRY_DELAYS_MS,
   Reading,
   VOICE_WAIT_MS,
   localVoice,
   pickVoice,
   sentenceStart,
+  sentenceStarts,
 } from "../../src/read_reply/reading.mjs";
 
 const ALVARO = { name: "Álvaro", lang: "es-ES", localService: false };
@@ -138,7 +139,7 @@ describe("Reading", () => {
 
     r.setRate(1.1);
     r.setRate(1.2);
-    t.mock.timers.tick(RATE_SETTLE_MS - 1);
+    t.mock.timers.tick(SETTLE_MS - 1);
     assert.equal(synth.spoken.length, 1);
     t.mock.timers.tick(1);
 
@@ -153,7 +154,7 @@ describe("Reading", () => {
 
     r.setRate(1.2);
     synth.end();
-    t.mock.timers.tick(RATE_SETTLE_MS);
+    t.mock.timers.tick(SETTLE_MS);
 
     assert.equal(synth.spoken.length, 2);
     assert.equal(synth.last.rate, 1.2);
@@ -165,7 +166,7 @@ describe("Reading", () => {
     r.togglePause();
 
     r.setRate(1.5);
-    t.mock.timers.tick(RATE_SETTLE_MS);
+    t.mock.timers.tick(SETTLE_MS);
     assert.equal(synth.spoken.length, 1);
     r.togglePause();
 
@@ -281,12 +282,87 @@ describe("Reading", () => {
     r.stop();
     r.stop();
     r.togglePause();
-    t.mock.timers.tick(RATE_SETTLE_MS);
+    t.mock.timers.tick(SETTLE_MS);
     await settle();
 
     assert.equal(synth.current, null);
     assert.equal(synth.spoken.length, 1);
     assert.deepEqual(finished, [null]);
+  });
+});
+
+describe("Reading, going to another sentence", () => {
+  // Sentences start at 0, 9 and 21 of 32 characters.
+  const CHUNKS = ["Uno dos. Tres cuatro.", "Cinco seis."];
+  let synth;
+  beforeEach(() => {
+    synth = new FakeSynth();
+  });
+
+  test("the slider goes to the start of the sentence at that point", (t) => {
+    t.mock.timers.enable({ apis: ["setTimeout"] });
+    const { reading: r, progress } = reading(synth, CHUNKS);
+
+    r.seek(0.5);
+    assert.equal(synth.current, null); // silence at once
+    t.mock.timers.tick(SETTLE_MS);
+
+    assert.equal(synth.last.text, "Tres cuatro.");
+    assert.deepEqual(progress, [9 / 32]);
+  });
+
+  test("the voice goes on after the clicks stop, at the last sentence asked", (t) => {
+    t.mock.timers.enable({ apis: ["setTimeout"] });
+    const { reading: r } = reading(synth, CHUNKS);
+
+    r.skip(1);
+    r.skip(1);
+    t.mock.timers.tick(SETTLE_MS);
+    assert.equal(synth.last.text, "Cinco seis.");
+    r.skip(-1);
+    t.mock.timers.tick(SETTLE_MS);
+
+    assert.equal(synth.last.text, "Tres cuatro.");
+    assert.equal(synth.spoken.length, 3);
+  });
+
+  test("before the first sentence is its start, after the last there is none", (t) => {
+    t.mock.timers.enable({ apis: ["setTimeout"] });
+    const { reading: r } = reading(synth, CHUNKS);
+    synth.word(4);
+
+    r.skip(-1);
+    t.mock.timers.tick(SETTLE_MS);
+    assert.equal(synth.last.text, "Uno dos. Tres cuatro.");
+    synth.end();
+    r.skip(1);
+    t.mock.timers.tick(SETTLE_MS);
+
+    assert.equal(synth.last.text, "Cinco seis.");
+    assert.notEqual(synth.current, null);
+    assert.equal(synth.spoken.length, 3);
+  });
+
+  test("a jump while paused is where resuming starts", (t) => {
+    t.mock.timers.enable({ apis: ["setTimeout"] });
+    const { reading: r } = reading(synth, CHUNKS);
+    r.togglePause();
+
+    r.skip(1);
+    t.mock.timers.tick(SETTLE_MS);
+    assert.equal(synth.spoken.length, 1);
+    r.togglePause();
+
+    assert.equal(synth.last.text, "Tres cuatro.");
+  });
+
+  test("a jump before the start is where it starts", () => {
+    const { reading: r } = reading(synth, CHUNKS, {}, { start: false });
+
+    r.seek(0.9);
+    r.start();
+
+    assert.equal(synth.last.text, "Cinco seis.");
   });
 });
 
@@ -311,7 +387,7 @@ describe("Reading before it starts", () => {
     const { reading: r } = reading(synth, ["Uno."], {}, { start: false });
 
     r.setRate(1.4);
-    t.mock.timers.tick(RATE_SETTLE_MS);
+    t.mock.timers.tick(SETTLE_MS);
     assert.equal(synth.spoken.length, 0);
     r.start();
 
@@ -327,6 +403,16 @@ describe("Reading before it starts", () => {
     r.togglePause();
 
     assert.equal(synth.last.text, "Uno.");
+  });
+});
+
+describe("sentenceStarts", () => {
+  test("lists where each sentence starts, the first at 0", () => {
+    assert.deepEqual(sentenceStarts("Uno. Dos: tres… cuatro"), [0, 5, 10, 16]);
+  });
+
+  test("an ending at the very end starts nothing", () => {
+    assert.deepEqual(sentenceStarts("Uno. "), [0]);
   });
 });
 

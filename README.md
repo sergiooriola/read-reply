@@ -56,7 +56,7 @@ y `herdr server reload-config` para cargarlo. Los errores salen como notificacio
 6. Mientras se prepara el texto, un script de PowerShell busca la ventana de Windows Terminal. Cuando se abre la de lectura, que reconoce por su perfil de Edge, la coloca arriba en el centro del terminal, por encima de las demás, y devuelve el foco a la ventana que lo tenía (`desktop.py`, `desktop.ps1`).
 7. Una segunda pulsación encuentra ocupado el bloqueo de la lectura en curso y le pide que pare (`cli.py`).
 
-Deja tres cosas fuera del repositorio: un perfil propio de Edge en `%LOCALAPPDATA%\read-reply\edge-profile`, de unos 16 MB y aparte del tuyo; la velocidad elegida, en `~/.local/state/read-reply/rate` (o bajo `XDG_STATE_HOME`), y el bloqueo, en `$XDG_RUNTIME_DIR/read-reply/`.
+Deja tres cosas fuera del repositorio: un perfil propio de Edge en `%LOCALAPPDATA%\read-reply\edge-profile`, de unos 45 MB y aparte del tuyo; la velocidad elegida, en `~/.local/state/read-reply/rate` (o bajo `XDG_STATE_HOME`), y el bloqueo, en `$XDG_RUNTIME_DIR/read-reply/`.
 
 ### Por qué así
 

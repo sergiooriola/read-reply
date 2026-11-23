@@ -102,7 +102,12 @@ def test_an_answer_that_is_not_a_terminal_is_ignored(
 def test_no_terminal_is_an_answer_too(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    fake_powershell(monkeypatch, tmp_path / "ps", "echo null\nread -r line\n")
+    received = tmp_path / "received"
+    fake_powershell(
+        monkeypatch,
+        tmp_path / "ps",
+        f'echo null\nread -r line\nprintf "%s\\n" "$line" > {received}\n',
+    )
     start = time.monotonic()
 
     with Desktop() as script:
@@ -110,6 +115,7 @@ def test_no_terminal_is_an_answer_too(
         script.edge_started("C:\\profile")  # asks no more
 
     assert time.monotonic() - start < desktop.MONITOR_TIMEOUT_S
+    assert json.loads(received.read_text()) == {"profile": "C:\\profile"}
 
 
 def test_a_script_that_hangs_is_waited_for_briefly_then_ended(

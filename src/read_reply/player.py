@@ -64,6 +64,7 @@ class Player:
     def __init__(self, state_dir: Path, rate_file: Path) -> None:
         self._stop_url_file = state_dir / STOP_URL_FILE
         self._rate_file = rate_file
+        self._rate_lock = threading.Lock()  # one save at a time
         package = files("read_reply")
         self._files = {
             "": (package.joinpath("player.html").read_bytes(), "text/html"),
@@ -193,7 +194,9 @@ class Player:
                     case "error":
                         player._errors.append(body)
                     case "rate":
-                        if not save_rate(player._rate_file, body):
+                        with player._rate_lock:
+                            saved = save_rate(player._rate_file, body)
+                        if not saved:
                             self.send_error(400)
                             return
                     case "finished":

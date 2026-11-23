@@ -359,6 +359,17 @@ describe("Reading, going to another sentence", () => {
     assert.deepEqual(finished, []);
   });
 
+  test("a pause with the slider held at the end is ignored", () => {
+    const { reading: r } = reading(synth, CHUNKS);
+    r.hold(true);
+    synth.end();
+    synth.end();
+
+    r.togglePause();
+
+    assert.equal(r.paused, false);
+  });
+
   test("let go without a jump, the slider lets the reading end", () => {
     const { reading: r, finished } = reading(synth, CHUNKS);
     r.hold(true);
@@ -435,7 +446,13 @@ describe("Reading before it starts", () => {
 
 describe("sentenceStarts", () => {
   test("lists where each sentence starts, the first at 0", () => {
-    assert.deepEqual(sentenceStarts("Uno. Dos: tres… cuatro"), [0, 5, 10, 16]);
+    assert.deepEqual(sentenceStarts("Uno. Dos: Tres… Cuatro"), [0, 5, 10, 16]);
+  });
+
+  test("a lowercase letter after the space goes on with the sentence", () => {
+    const text = "Haz clic en «¿La has olvidado?» para entrar, etc. y sigue: ahí. Fin";
+
+    assert.deepEqual(sentenceStarts(text), [0, 64]);
   });
 
   test("closing quotes or brackets may come before the space", () => {
@@ -449,7 +466,7 @@ describe("sentenceStarts", () => {
 
 describe("sentenceStart", () => {
   test("finds the start of the sentence that holds the index", () => {
-    const text = "Uno. Dos: tres; cuatro… cinco";
+    const text = "Uno. Dos: Tres; Cuatro… Cinco";
 
     assert.equal(sentenceStart(text, 2), 0);
     assert.equal(sentenceStart(text, 5), 5);

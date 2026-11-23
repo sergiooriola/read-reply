@@ -97,6 +97,7 @@
     const reply = await (await fetch(base + "reply")).json();
     const { promise: finished, resolve: finish } = Promise.withResolvers();
     let dragging = false; // the slider follows the voice, but not under the pointer
+    let holder = null; // the pointer holding the slider
     // The controls and a stop work at once; it speaks once the voice is known.
     const reading = new Reading({
       synth: speechSynthesis,
@@ -139,20 +140,28 @@
     $("next").addEventListener("click", () => reading.skip(1));
     // Held, the slider keeps the reading from ending. "change" comes after
     // "pointerup", in the same task: the jump goes first, then the release.
-    const hold = (held) => {
-      dragging = held;
-      reading.hold(held);
-    };
     $("position").addEventListener("pointerdown", (event) => {
-      if (event.button === 0) hold(true);
+      if (event.button !== 0 || holder !== null) return;
+      holder = event.pointerId;
+      dragging = true;
+      reading.hold(true);
     });
+    const release = () => {
+      holder = null;
+      dragging = false;
+      reading.hold(false);
+    };
     // Let go anywhere: the pointer may leave the slider, or the window.
-    for (const name of ["pointerup", "pointercancel", "blur"]) {
-      addEventListener(name, () => {
-        if (dragging) setTimeout(() => hold(false));
+    for (const name of ["pointerup", "pointercancel"]) {
+      addEventListener(name, (event) => {
+        if (event.pointerId === holder) setTimeout(release);
       });
     }
+    addEventListener("blur", () => {
+      if (holder !== null) setTimeout(release);
+    });
     $("position").addEventListener("change", (event) => {
+      dragging = false; // the slider shows where the jump lands
       reading.seek(event.target.value / 1000);
     });
     $("slower").addEventListener("click", () => changeRate(-1));

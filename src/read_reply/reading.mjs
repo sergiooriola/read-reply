@@ -60,9 +60,10 @@ export function localVoice(synth, preferred) {
 }
 
 // Where each sentence of the text starts. A sentence ends at . ! ? … : or ;
-// and a space, with any closing quotes or brackets between them.
+// and a space, with any closing quotes or brackets between them, before
+// anything but a lowercase letter: "«¿Sí?» para" or "etc. y" go on.
 export function sentenceStarts(text) {
-  const ends = [...text.matchAll(/[.!?…:;][»”’"')\]]*\s+/g)];
+  const ends = [...text.matchAll(/[.!?…:;][»”’"')\]]*\s+(?!\p{Ll})/gu)];
   const starts = ends.map((end) => end.index + end[0].length);
   return [0, ...starts.filter((start) => start < text.length)];
 }
@@ -142,7 +143,7 @@ export class Reading {
   }
 
   togglePause() {
-    if (this.#finished) return;
+    if (this.#finished || this.#index >= this.#chunks.length) return; // held at the end
     this.#paused = !this.#paused;
     if (this.#paused) {
       this.#cancelWait();

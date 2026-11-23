@@ -1,0 +1,198 @@
+// The reading behind player.html: speaks the chunks one after another, and
+// lets the listener pause, change the speed and stop.
+//
+// Edge's online voices, such as Álvaro, ignore speechSynthesis.pause(), so a
+// pause cancels the utterance, and resuming speaks again from the start of the
+// sentence in progress. A new speed restarts at the word in progress, which
+// the "boundary" events report. No DOM here: the tests run it in Node.
+
+export const RATE_MIN = 0.5;
+export const RATE_MAX = 2;
+export const RATE_STEP = 0.1;
+// A new speed waits for the clicks to stop: each restart is a new request to
+// the online voice, and quick ones make it fail more often.
+export const RATE_SETTLE_MS = 400;
+// Edge loads its online voices after the page, and announces them.
+export const VOICE_WAIT_MS = 5000;
+
+const voiceNamed = (synth, name) =>
+  synth.getVoices().find((voice) => voice.name === name);
+
+// The first preferred voice once Edge offers it, or after waitMs the first
+// preferred one available, or null.
+export function pickVoice(synth, preferred, waitMs = VOICE_WAIT_MS) {
+  return new Promise((resolve) => {
+    const done = (voice) => {
+      synth.removeEventListener("voiceschanged", tryFirst);
+      clearTimeout(timer);
+      resolve(voice);
+    };
+    const tryFirst = () => {
+      const voice = voiceNamed(synth, preferred[0]);
+      if (voice) done(voice);
+    };
+    const timer = setTimeout(
+      () => done(preferred.map((name) => voiceNamed(synth, name)).find(Boolean) ?? null),
+      waitMs,
+    );
+    synth.addEventListener("voiceschanged", tryFirst);
+    tryFirst();
+  });
+}
+
+// A voice that works without internet: the first local one preferred, then
+// any local voice of Spain, then any local Spanish one.
+export function localVoice(synth, preferred) {
+  const local = (voice) => voice?.localService;
+  const voices = synth.getVoices().filter(local);
+  return (
+    preferred.map((name) => voiceNamed(synth, name)).find(local) ??
+    voices.find((voice) => voice.lang === "es-ES") ??
+    voices.find((voice) => voice.lang.startsWith("es")) ??
+    null
+  );
+}
+
+// Where the sentence that holds text[index] starts. Sentences end as
+// speech_text.split_sentences cuts them.
+export function sentenceStart(text, index) {
+  const last = [...text.slice(0, index).matchAll(/[.!?…:;]\s+/g)].at(-1);
+  return last ? last.index + last[0].length : 0;
+}
+
+export class Reading {
+  voice;
+  rate;
+  #synth;
+  #Utterance;
+  #chunks;
+  #preferred;
+  #onProgress;
+  #onFinish;
+  #total;
+  #read = 0; // characters of the chunks already read
+  #index = 0; // the chunk being read
+  #offset = 0; // where in it the utterance in progress starts
+  #word = 0; // where in it the word being spoken starts
+  #current = null; // the utterance in progress; any other was cancelled
+  #retried = false;
+  #paused = false;
+  #finished = false;
+  #restart = null; // a new speed waiting for the clicks to stop
+
+  // synth and Utterance: speechSynthesis and SpeechSynthesisUtterance.
+  // preferred: voice names, for a local voice when the online one fails.
+  // onFinish(error): once, with null unless no voice could go on.
+  constructor({ synth, Utterance, chunks, voice, preferred, rate, onProgress, onFinish }) {
+    this.#synth = synth;
+    this.#Utterance = Utterance;
+    this.#chunks = chunks;
+    this.voice = voice;
+    this.#preferred = preferred;
+    this.rate = rate;
+    this.#onProgress = onProgress;
+    this.#onFinish = onFinish;
+    this.#total = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+  }
+
+  get paused() {
+    return this.#paused;
+  }
+
+  start() {
+    this.#speak();
+  }
+
+  togglePause() {
+    if (this.#finished) return;
+    this.#paused = !this.#paused;
+    if (this.#paused) {
+      this.#cancelRestart();
+      this.#interrupt(sentenceStart(this.#chunks[this.#index], this.#word));
+    } else {
+      this.#speak();
+    }
+  }
+
+  setRate(rate) {
+    this.rate = rate;
+    this.#cancelRestart();
+    if (this.#paused || this.#finished) return; // resuming uses it
+    this.#restart = setTimeout(() => {
+      this.#restart = null;
+      this.#interrupt(this.#word);
+      this.#speak();
+    }, RATE_SETTLE_MS);
+  }
+
+  stop() {
+    this.#finish(null);
+  }
+
+  #speak() {
+    if (this.#index >= this.#chunks.length) return this.#finish(null);
+    const offset = this.#offset;
+    const utterance = new this.#Utterance(this.#chunks[this.#index].slice(offset));
+    utterance.voice = this.voice;
+    utterance.lang = this.voice?.lang ?? "es-ES";
+    utterance.rate = this.rate;
+    utterance.onboundary = (event) => {
+      if (utterance !== this.#current || event.name !== "word") return;
+      this.#word = offset + event.charIndex;
+      this.#retried = false; // it is speaking again
+      this.#onProgress((this.#read + this.#word) / this.#total);
+    };
+    utterance.onend = () => {
+      if (utterance !== this.#current) return;
+      this.#retried = false;
+      this.#read += this.#chunks[this.#index].length;
+      this.#index += 1;
+      this.#offset = 0;
+      this.#speak();
+    };
+    utterance.onerror = (event) => {
+      if (utterance !== this.#current) return; // cancelled on purpose
+      this.#recover(event.error);
+    };
+    this.#current = utterance;
+    this.#word = offset;
+    this.#synth.speak(utterance);
+  }
+
+  // Álvaro fails now and then ("synthesis-failed"): once more with him from
+  // the word in progress, then with a local voice for the rest.
+  #recover(error) {
+    this.#offset = this.#word;
+    if (!this.#retried) {
+      this.#retried = true;
+      return this.#speak();
+    }
+    const local = !this.voice?.localService && localVoice(this.#synth, this.#preferred);
+    if (local) {
+      this.voice = local;
+      return this.#speak();
+    }
+    this.#finish(error);
+  }
+
+  // Cancels the utterance in progress; the next one starts at "from".
+  #interrupt(from) {
+    this.#offset = from;
+    this.#current = null;
+    this.#synth.cancel();
+  }
+
+  #cancelRestart() {
+    clearTimeout(this.#restart);
+    this.#restart = null;
+  }
+
+  #finish(error) {
+    if (this.#finished) return;
+    this.#finished = true;
+    this.#cancelRestart();
+    this.#current = null;
+    this.#synth.cancel();
+    this.#onFinish(error);
+  }
+}

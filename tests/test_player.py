@@ -10,8 +10,15 @@ from urllib.request import Request, urlopen
 import pytest
 
 from read_reply import player as player_module
+from read_reply.desktop import Monitor
 from read_reply.errors import UserError
-from read_reply.player import STOP_URL_FILE, VOICES, Player, request_stop
+from read_reply.player import (
+    STOP_URL_FILE,
+    VOICES,
+    Player,
+    edge_command,
+    request_stop,
+)
 
 
 def get(url: str) -> bytes:
@@ -32,7 +39,16 @@ def test_the_page_and_the_reply_are_served_under_a_secret_path(tmp_path: Path) -
         reply = json.loads(get(player.url + "reply"))
 
     assert b"speechSynthesis" in page
-    assert reply == {"chunks": ["Hola."], "voices": list(VOICES), "rate": 1.0}
+    assert reply == {"chunks": ["Hola."], "voices": list(VOICES)}
+
+
+def test_the_page_gets_its_module_as_javascript(tmp_path: Path) -> None:
+    with (
+        Player(tmp_path) as player,
+        urlopen(player.url + "reading.mjs", timeout=5) as response,
+    ):
+        assert response.headers["Content-Type"].startswith("text/javascript")
+        assert b"export class Reading" in response.read()
 
 
 def test_other_paths_are_not_found(tmp_path: Path) -> None:
@@ -166,3 +182,21 @@ def test_a_page_that_ignores_a_stop_is_given_up_on(
         request_stop(tmp_path)
 
         player.wait_for(FakeEdge(exited=False))
+
+
+def test_edge_opens_the_page_as_a_small_window_in_the_corner() -> None:
+    monitor = Monitor(left=0, top=0, right=1920, bottom=1080, scale=1.0)
+
+    command = edge_command("http://127.0.0.1:1/x/", "C:\\profile", monitor)
+
+    assert "--app=http://127.0.0.1:1/x/" in command
+    assert "--window-size=300,110" in command
+    assert "--window-position=1608,958" in command
+    assert "--user-data-dir=C:\\profile" in command
+    assert "--headless" not in command
+
+
+def test_without_its_monitor_edge_places_the_window() -> None:
+    command = edge_command("http://127.0.0.1:1/x/", "C:\\profile", None)
+
+    assert not any(arg.startswith("--window-position") for arg in command)

@@ -1,18 +1,17 @@
-"""Speaks text through headless Microsoft Edge.
+"""Speaks text through Microsoft Edge, in a small window with its controls.
 
 Edge's implementation of the standard Web Speech API includes Microsoft's
 natural online voices. A throwaway HTTP server on 127.0.0.1, which WSL
-forwards to Windows, hands the page (player.html) the text and any stop
-request. The page closes itself when it ends, and headless Edge exits with it.
+forwards to Windows, hands the page (player.html and reading.mjs) the text and
+any stop request. The page closes itself when it ends, and Edge exits with it.
 """
 
-import base64
 import re
 import secrets
 import subprocess
 import threading
 import time
-from contextlib import suppress
+from contextlib import ExitStack, suppress
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib.resources import files
 from json import dumps
@@ -22,6 +21,13 @@ from typing import Any, Protocol, Self
 from urllib.parse import urlsplit
 from urllib.request import ProxyHandler, Request, build_opener
 
+from read_reply.desktop import (
+    WINDOW_SIZE,
+    Desktop,
+    Monitor,
+    powershell_command,
+    window_position,
+)
 from read_reply.errors import UserError
 
 EDGE = Path("/mnt/c/Program Files (x86)/Microsoft/Edge/Application/msedge.exe")
@@ -31,7 +37,6 @@ VOICES = (
     "Microsoft Álvaro Online (Natural) - Spanish (Spain)",
     "Microsoft Pablo - Spanish (Spain)",
 )
-RATE = 1.0
 EDGE_START_TIMEOUT_S = 20.0
 STOP_GRACE_S = 3.0
 POLL_INTERVAL_S = 0.2
@@ -48,13 +53,23 @@ class Process(Protocol):
 class Player:
     """One reading: the page's server, and Edge while it speaks.
 
-    The server starts on entering the context, before the text is ready, so
-    that a second key press can already stop the reading.
+    The server and the desktop script start on entering the context, before
+    the text is ready: a second key press can already stop the reading, and
+    the window's place is known by the time Edge starts.
     """
 
     def __init__(self, state_dir: Path) -> None:
         self._stop_url_file = state_dir / STOP_URL_FILE
-        self._page = files("read_reply").joinpath("player.html").read_bytes()
+        package = files("read_reply")
+        self._files = {
+            "": (package.joinpath("player.html").read_bytes(), "text/html"),
+            "reading.mjs": (
+                package.joinpath("reading.mjs").read_bytes(),
+                "text/javascript",
+            ),
+        }
+        self._desktop = Desktop()
+        self._context = ExitStack()  # undoes __enter__
         self._chunks: list[str] = []
         self._page_loaded = threading.Event()
         self._stop_requested = threading.Event()
@@ -67,11 +82,18 @@ class Player:
         self.url = f"http://127.0.0.1:{self._server.server_address[1]}/{token}/"
 
     def __enter__(self) -> Self:
-        threading.Thread(target=self._server.serve_forever, daemon=True).start()
-        # Written whole, so that a second press never reads half of it.
-        partial = self._stop_url_file.with_suffix(".partial")
-        partial.write_text(self.url + "stop")
-        partial.replace(self._stop_url_file)
+        # Whatever has started is undone if a later step fails.
+        with ExitStack() as context:
+            threading.Thread(target=self._server.serve_forever, daemon=True).start()
+            context.callback(self._server.server_close)
+            context.callback(self._server.shutdown)
+            # Written whole, so that a second press never reads half of it.
+            partial = self._stop_url_file.with_suffix(".partial")
+            partial.write_text(self.url + "stop")
+            partial.replace(self._stop_url_file)
+            context.callback(self._stop_url_file.unlink, missing_ok=True)
+            context.enter_context(self._desktop)
+            self._context = context.pop_all()
         return self
 
     def __exit__(
@@ -80,9 +102,7 @@ class Player:
         exc: BaseException | None,
         traceback: TracebackType | None,
     ) -> None:
-        self._stop_url_file.unlink(missing_ok=True)
-        self._server.shutdown()
-        self._server.server_close()
+        self._context.close()
 
     @property
     def stop_requested(self) -> bool:
@@ -95,23 +115,13 @@ class Player:
         self._chunks = chunks
         profile = edge_profile()
         edge = subprocess.Popen(
-            [
-                str(EDGE),
-                "--headless",
-                f"--user-data-dir={profile}",
-                # The page speaks without a click, which Chromium otherwise requires.
-                "--autoplay-policy=no-user-gesture-required",
-                "--no-first-run",
-                "--disable-extensions",
-                "--disable-sync",
-                "--disable-component-update",
-                self.url,
-            ],
+            edge_command(self.url, profile, self._desktop.monitor()),
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             cwd="/mnt/c",  # Windows programs need a Windows working directory
         )
+        self._desktop.give_focus_back()
         try:
             self.wait_for(edge)
         finally:
@@ -152,15 +162,13 @@ class Player:
         class Handler(BaseHTTPRequestHandler):
             def do_GET(self) -> None:
                 match self._route():
-                    case "":
-                        self._reply(player._page, "text/html; charset=utf-8")
-                        player._page_loaded.set()
+                    case "" | "reading.mjs" as name:
+                        body, content_type = player._files[name]
+                        self._reply(body, content_type + "; charset=utf-8")
+                        if name == "":
+                            player._page_loaded.set()
                     case "reply":
-                        reply = {
-                            "chunks": player._chunks,
-                            "voices": VOICES,
-                            "rate": RATE,
-                        }
+                        reply = {"chunks": player._chunks, "voices": VOICES}
                         self._reply(dumps(reply).encode(), "application/json")
                     case "state":
                         state = {"stop": player.stop_requested}
@@ -198,6 +206,28 @@ class Player:
                 pass  # no log line per request
 
         return Handler
+
+
+def edge_command(url: str, profile: str, monitor: Monitor | None) -> list[str]:
+    """Edge with the page in a window of its own, in its own profile."""
+    width, height = WINDOW_SIZE
+    position = []
+    if monitor:  # else where Edge decides
+        x, y = window_position(monitor)
+        position = [f"--window-position={x},{y}"]
+    return [
+        str(EDGE),
+        f"--app={url}",  # a window with no tabs nor address bar
+        f"--window-size={width},{height}",
+        *position,
+        f"--user-data-dir={profile}",
+        # The page speaks without a click, which Chromium otherwise requires.
+        "--autoplay-policy=no-user-gesture-required",
+        "--no-first-run",
+        "--disable-extensions",
+        "--disable-sync",
+        "--disable-component-update",
+    ]
 
 
 def request_stop(state_dir: Path, wait_s: float = 1.0) -> None:
@@ -248,9 +278,8 @@ def stop_edge(profile: str) -> None:
         "ForEach-Object { "
         "Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }"
     )
-    encoded = base64.b64encode(script.encode("utf-16-le")).decode()
     subprocess.run(
-        ["powershell.exe", "-NoProfile", "-NonInteractive", "-EncodedCommand", encoded],
+        powershell_command(script),
         capture_output=True,
         cwd="/mnt/c",
         check=False,

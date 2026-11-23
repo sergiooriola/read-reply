@@ -107,7 +107,7 @@ function Test-Edge([IntPtr] $window) {
 
 $edge = $null  # what the line says, once Edge has started
 $deadline = $null
-$last = $front  # the window in front, other than Edge's
+$last = $front  # the window in front, other than the reader
 while (-not $deadline -or (Get-Date) -lt $deadline) {
   if (-not $edge -and $line.IsCompleted) {
     if ($null -eq $line.Result) { exit }  # end of input: no reading
@@ -115,10 +115,11 @@ while (-not $deadline -or (Get-Date) -lt $deadline) {
     $deadline = (Get-Date).AddSeconds($WaitSeconds)
   }
   $window = [Desktop]::GetForegroundWindow()
-  if ($window -ne [IntPtr]::Zero -and $window -ne $last) {
-    if (-not (Test-Edge $window)) {
+  # An Edge window before Edge's start is known waits: it may be the reader.
+  if ($window -ne [IntPtr]::Zero -and $window -ne $last -and ($edge -or -not (Test-Edge $window))) {
+    if (-not $edge -or -not (Test-Reader $window $edge.profile)) {
       $last = $window
-    } elseif ($edge -and (Test-Reader $window $edge.profile)) {
+    } else {
       $topmost = [IntPtr](-1)  # HWND_TOPMOST
       $flags = 0x11  # SWP_NOSIZE | SWP_NOACTIVATE
       if ($null -eq $edge.x) { $flags = $flags -bor 0x2 }  # SWP_NOMOVE

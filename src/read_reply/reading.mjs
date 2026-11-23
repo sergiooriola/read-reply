@@ -15,8 +15,8 @@ export const RATE_SETTLE_MS = 400;
 // Microsoft's service fails now and then for a moment ("synthesis-failed"):
 // the same voice is tried again after these waits before a local one.
 export const RETRY_DELAYS_MS = [500, 1500];
-// Errors about the text itself: no retry nor voice would say that chunk.
-const TEXT_ERRORS = ["text-too-long", "invalid-argument"];
+// The text itself is refused: no retry nor voice would say that chunk.
+const TEXT_TOO_LONG = "text-too-long";
 // Edge loads its online voices after the page, and announces them.
 export const VOICE_WAIT_MS = 5000;
 
@@ -188,7 +188,7 @@ export class Reading {
   // local voice for the rest, then the end.
   #recover(error) {
     this.#current = null;
-    if (TEXT_ERRORS.includes(error)) {
+    if (error === TEXT_TOO_LONG) {
       this.#onSkip(error);
       return this.#next();
     }

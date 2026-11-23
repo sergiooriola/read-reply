@@ -233,6 +233,17 @@ describe("Reading", () => {
     assert.deepEqual(finished, [null]);
   });
 
+  test("a refused speed is a failure like any other, not a refused text", (t) => {
+    t.mock.timers.enable({ apis: ["setTimeout"] });
+    const { skipped } = reading(synth, ["Uno.", "Dos."]);
+
+    synth.fail("invalid-argument");
+    t.mock.timers.tick(RETRY_DELAYS_MS[0]);
+
+    assert.equal(synth.last.text, "Uno.");
+    assert.deepEqual(skipped, []);
+  });
+
   test("when no voice can go on, it finishes with the error", (t) => {
     t.mock.timers.enable({ apis: ["setTimeout"] });
     synth.voices = [ALVARO];

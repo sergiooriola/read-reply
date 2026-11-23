@@ -80,6 +80,7 @@ class Desktop:
     def __init__(self) -> None:
         self._script: subprocess.Popen[str] | None = None
         self._terminal: Terminal | None = None
+        self._asked = False  # the script answers once
 
     def __enter__(self) -> Self:
         script = files("read_reply").joinpath("desktop.ps1").read_text()
@@ -115,7 +116,8 @@ class Desktop:
 
     def terminal(self) -> Terminal | None:
         """The terminal's window when the reading started. Asks once."""
-        if self._terminal is None:
+        if not self._asked:
+            self._asked = True
             self._terminal = self._read_terminal()
         return self._terminal
 

@@ -79,6 +79,10 @@
   const base = location.pathname;
   const post = (path, body = "") =>
     fetch(base + path, { method: "POST", body }).catch(() => {});
+  // Reports and speeds go to read-reply one after another, in order; the
+  // last one is awaited before "finished".
+  let sent = Promise.resolve();
+  const send = (path, body) => (sent = sent.then(() => post(path, body)));
   const $ = (id) => document.getElementById(id);
   const rateText = new Intl.NumberFormat("es-ES", {
     minimumFractionDigits: 1,
@@ -99,7 +103,7 @@
       onProgress: (fraction) => {
         $("progress").style.width = `${Math.min(fraction, 1) * 100}%`;
       },
-      onSkip: (error) => post("error", error),
+      onSkip: (error) => send("error", error),
       onFinish: finish,
     });
 
@@ -121,7 +125,7 @@
       const rate = Math.round((reading.rate + steps * RATE_STEP) * 10) / 10;
       if (rate < RATE_MIN || rate > RATE_MAX) return;
       reading.setRate(rate);
-      post("rate", String(rate)); // read-reply keeps it for the next reading
+      send("rate", String(rate)); // read-reply keeps it for the next reading
       showRate();
     };
 
@@ -157,16 +161,17 @@
     reading.start();
     const error = await finished;
     clearInterval(poll);
-    // Awaited, so that the error arrives before "finished".
-    if (error) await post("error", error);
+    if (error) send("error", error);
+    await sent; // before "finished"
   }
 
   // Closing the window is stopping, not Edge failing.
   addEventListener("pagehide", () => navigator.sendBeacon(base + "finished"));
 
   main()
-    .catch((error) => post("error", String(error)))
+    .catch((error) => send("error", String(error)))
     .finally(async () => {
+      await sent;
       await post("finished");
       window.close();
     });

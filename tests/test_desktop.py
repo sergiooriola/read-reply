@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from read_reply import desktop
-from read_reply.desktop import Desktop, Terminal, window_position
+from read_reply.desktop import Desktop, Terminal, window_pixels, window_position
 
 
 @pytest.mark.parametrize(
@@ -28,6 +28,13 @@ def test_the_window_goes_to_the_top_of_the_terminal_centred(
     terminal: Terminal, position: tuple[int, int]
 ) -> None:
     assert window_position(terminal) == position
+
+
+def test_the_script_puts_the_window_in_physical_pixels() -> None:
+    terminal = Terminal(2020, 100, 4420, monitor_left=1920, monitor_top=0, scale=1.5)
+
+    # 300 x 110 at 150 % is 450 pixels wide; 8 of margin, 12.
+    assert window_pixels(terminal) == (2995, 112)
 
 
 def fake_powershell(monkeypatch: pytest.MonkeyPatch, script: Path, body: str) -> None:
@@ -53,27 +60,40 @@ def test_the_script_tells_the_terminal_and_hears_when_edge_starts(
     received = tmp_path / "received"
     answer = f"echo '{json.dumps(TERMINAL)}'\n"
     fake_powershell(
-        monkeypatch, tmp_path / "ps", answer + f'read line\necho "$line" > {received}\n'
+        monkeypatch,
+        tmp_path / "ps",
+        answer + f'read -r line\nprintf "%s\\n" "$line" > {received}\n',
     )
 
     with Desktop() as script:
         terminal = script.terminal()
-        script.give_focus_back()
+        script.edge_started("C:\\profile")
 
     assert terminal == Terminal(**TERMINAL)  # type: ignore[arg-type]
-    assert received.read_text() == "edge started\n"
+    edge = json.loads(received.read_text())
+    assert edge == {"profile": "C:\\profile", "x": 735, "y": 12}
 
 
 def test_without_powershell_the_reading_goes_on() -> None:
     with Desktop() as script:
         assert script.terminal() is None
-        script.give_focus_back()
+        script.edge_started("C:\\profile")
 
 
+@pytest.mark.parametrize(
+    "answer",
+    [
+        "Add-Type: error",
+        "null",
+        json.dumps(TERMINAL | {"right": 0}),
+        json.dumps(TERMINAL | {"scale": 0}),
+    ],
+    ids=["error", "no-terminal", "no-frame", "no-scale"],
+)
 def test_an_answer_that_is_not_a_terminal_is_ignored(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, answer: str
 ) -> None:
-    fake_powershell(monkeypatch, tmp_path / "ps", "echo 'Add-Type: error'\n")
+    fake_powershell(monkeypatch, tmp_path / "ps", f"echo '{answer}'\n")
 
     with Desktop() as script:
         assert script.terminal() is None

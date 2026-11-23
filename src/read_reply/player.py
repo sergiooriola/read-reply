@@ -42,6 +42,8 @@ EDGE_START_TIMEOUT_S = 20.0
 STOP_GRACE_S = 3.0
 POLL_INTERVAL_S = 0.2
 STOP_URL_FILE = "stop-url"
+# What the Web Speech API accepts; the page offers a narrower range.
+RATE_MIN, RATE_MAX = 0.1, 10.0
 
 
 class Process(Protocol):
@@ -59,8 +61,9 @@ class Player:
     the window's place is known by the time Edge starts.
     """
 
-    def __init__(self, state_dir: Path) -> None:
+    def __init__(self, state_dir: Path, rate_file: Path) -> None:
         self._stop_url_file = state_dir / STOP_URL_FILE
+        self._rate_file = rate_file
         package = files("read_reply")
         self._files = {
             "": (package.joinpath("player.html").read_bytes(), "text/html"),
@@ -122,7 +125,7 @@ class Player:
             stderr=subprocess.DEVNULL,
             cwd=WINDOWS_CWD,
         )
-        self._desktop.give_focus_back()
+        self._desktop.edge_started(profile)
         try:
             self.wait_for(edge)
         finally:
@@ -169,7 +172,11 @@ class Player:
                         if name == "":
                             player._page_loaded.set()
                     case "reply":
-                        reply = {"chunks": player._chunks, "voices": VOICES}
+                        reply = {
+                            "chunks": player._chunks,
+                            "voices": VOICES,
+                            "rate": saved_rate(player._rate_file),
+                        }
                         self._reply(dumps(reply).encode(), "application/json")
                     case "state":
                         state = {"stop": player.stop_requested}
@@ -178,12 +185,17 @@ class Player:
                         self.send_error(404)
 
             def do_POST(self) -> None:
+                length = int(self.headers["Content-Length"] or 0)
+                body = self.rfile.read(length).decode()
                 match self._route():
                     case "stop":
                         player._stop_requested.set()
                     case "error":
-                        length = int(self.headers["Content-Length"] or 0)
-                        player._errors.append(self.rfile.read(length).decode())
+                        player._errors.append(body)
+                    case "rate":
+                        if not save_rate(player._rate_file, body):
+                            self.send_error(400)
+                            return
                     case "finished":
                         player._finished.set()
                     case _:
@@ -207,6 +219,34 @@ class Player:
                 pass  # no log line per request
 
         return Handler
+
+
+def saved_rate(path: Path) -> float:
+    """The speed last chosen in the window, kept between readings.
+
+    The page cannot keep it: its address has a new port each time, and the
+    browser keeps data per address.
+    """
+    try:
+        rate = float(path.read_text())
+    except OSError, ValueError:
+        return 1.0
+    return rate if RATE_MIN <= rate <= RATE_MAX else 1.0
+
+
+def save_rate(path: Path, text: str) -> bool:
+    """Keeps the speed the page sends; False if it is not one."""
+    try:
+        rate = float(text)
+    except ValueError:
+        return False
+    if not RATE_MIN <= rate <= RATE_MAX:  # NaN fails too
+        return False
+    path.parent.mkdir(parents=True, exist_ok=True)
+    partial = path.with_suffix(".partial")
+    partial.write_text(str(rate))
+    partial.replace(path)
+    return True
 
 
 def edge_command(url: str, profile: str, terminal: Terminal | None) -> list[str]:

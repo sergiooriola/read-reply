@@ -61,10 +61,13 @@ def test_errors_are_reported_and_exit_with_1(
 
 
 def test_a_press_during_a_reading_stops_it(tmp_path: Path) -> None:
-    with (tmp_path / "lock").open("w") as lock, Player(tmp_path) as reading:
+    with (
+        (tmp_path / "lock").open("w") as lock,
+        Player(tmp_path, tmp_path / "rate") as reading,
+    ):
         fcntl.flock(lock, fcntl.LOCK_EX)
 
-        cli.read_or_stop("w1:p1", tmp_path)
+        cli.read_or_stop("w1:p1", tmp_path, tmp_path / "rate")
 
         assert reading.stop_requested
 
@@ -82,7 +85,7 @@ def test_a_stop_during_the_preparation_skips_speaking(
     monkeypatch.setattr(cli, "reply_chunks", prepare_and_get_stopped)
     monkeypatch.setattr(Player, "play", must_not_play)
 
-    cli.read_or_stop("w1:p1", tmp_path)
+    cli.read_or_stop("w1:p1", tmp_path, tmp_path / "rate")
 
 
 def test_a_reply_with_nothing_to_say_is_an_error(
@@ -104,3 +107,20 @@ def test_the_state_lives_in_the_runtime_dir_or_in_the_home(
     monkeypatch.delenv("XDG_RUNTIME_DIR")
     monkeypatch.setenv("HOME", str(tmp_path))
     assert cli.state_dir() == tmp_path / ".cache" / "read-reply"
+
+
+@pytest.mark.parametrize(
+    ("state_home", "expected"),
+    [
+        ("/xdg/state", "/xdg/state"),
+        ("", "~/.local/state"),
+        ("relative", "~/.local/state"),
+    ],
+    ids=["set", "unset", "relative"],
+)
+def test_the_speed_is_kept_in_the_state_folder(
+    monkeypatch: pytest.MonkeyPatch, state_home: str, expected: str
+) -> None:
+    monkeypatch.setenv("XDG_STATE_HOME", state_home)
+
+    assert cli.rate_file() == Path(expected).expanduser() / "read-reply" / "rate"

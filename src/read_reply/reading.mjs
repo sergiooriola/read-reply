@@ -15,6 +15,8 @@ export const RATE_SETTLE_MS = 400;
 // Microsoft's service fails now and then for a moment ("synthesis-failed"):
 // the same voice is tried again after these waits before a local one.
 export const RETRY_DELAYS_MS = [500, 1500];
+// Errors about the text itself: no retry nor voice would say that chunk.
+const TEXT_ERRORS = ["text-too-long", "invalid-argument"];
 // Edge loads its online voices after the page, and announces them.
 export const VOICE_WAIT_MS = 5000;
 
@@ -71,6 +73,7 @@ export class Reading {
   #chunks;
   #preferred;
   #onProgress;
+  #onSkip;
   #onFinish;
   #total;
   #read = 0; // characters of the chunks already read
@@ -78,15 +81,28 @@ export class Reading {
   #offset = 0; // where in it the utterance in progress starts
   #word = 0; // where in it the word being spoken starts
   #current = null; // the utterance in progress; any other was cancelled
-  #failures = 0; // in a row, since the voice last spoke
+  #failures = 0; // in a row, without getting past where the last one was
+  #failedAt = -1; // where in the chunk the last failure was
+  #started = false; // the controls work before, while the voice loads
   #paused = false;
   #finished = false;
   #waiting = null; // a retry, or a new speed waiting for the clicks to stop
 
   // synth and Utterance: speechSynthesis and SpeechSynthesisUtterance.
   // preferred: voice names, for a local voice when the online one fails.
+  // onSkip(error): a chunk left out because of its text.
   // onFinish(error): once, with null unless no voice could go on.
-  constructor({ synth, Utterance, chunks, voice, preferred, rate, onProgress, onFinish }) {
+  constructor({
+    synth,
+    Utterance,
+    chunks,
+    voice,
+    preferred,
+    rate,
+    onProgress,
+    onSkip,
+    onFinish,
+  }) {
     this.#synth = synth;
     this.#Utterance = Utterance;
     this.#chunks = chunks;
@@ -94,6 +110,7 @@ export class Reading {
     this.#preferred = preferred;
     this.rate = rate;
     this.#onProgress = onProgress;
+    this.#onSkip = onSkip;
     this.#onFinish = onFinish;
     this.#total = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
   }
@@ -103,7 +120,8 @@ export class Reading {
   }
 
   start() {
-    this.#speak();
+    this.#started = true;
+    if (!this.#paused && !this.#finished) this.#speak();
   }
 
   togglePause() {
@@ -112,15 +130,17 @@ export class Reading {
     if (this.#paused) {
       this.#cancelWait();
       this.#interrupt(sentenceStart(this.#chunks[this.#index], this.#word));
-    } else {
+    } else if (this.#started) {
       this.#speak();
     }
   }
 
   setRate(rate) {
     this.rate = rate;
-    if (this.#paused || this.#finished) return; // resuming uses it
+    if (!this.#started || this.#paused || this.#finished) return; // used later
     this.#wait(RATE_SETTLE_MS, () => {
+      // A chunk that started meanwhile already has it.
+      if (this.#current?.rate === this.rate) return;
       this.#interrupt(this.#word);
       this.#speak();
     });
@@ -140,16 +160,11 @@ export class Reading {
     utterance.onboundary = (event) => {
       if (utterance !== this.#current || event.name !== "word") return;
       this.#word = offset + event.charIndex;
-      this.#failures = 0; // it is speaking again
+      if (this.#word > this.#failedAt) this.#failures = 0; // it got past it
       this.#onProgress((this.#read + this.#word) / this.#total);
     };
     utterance.onend = () => {
-      if (utterance !== this.#current) return;
-      this.#failures = 0;
-      this.#read += this.#chunks[this.#index].length;
-      this.#index += 1;
-      this.#offset = 0;
-      this.#speak();
+      if (utterance === this.#current) this.#next();
     };
     utterance.onerror = (event) => {
       if (utterance !== this.#current) return; // cancelled on purpose
@@ -160,11 +175,25 @@ export class Reading {
     this.#synth.speak(utterance);
   }
 
+  #next() {
+    this.#read += this.#chunks[this.#index].length;
+    this.#index += 1;
+    this.#offset = 0;
+    this.#failures = 0;
+    this.#failedAt = -1;
+    this.#speak();
+  }
+
   // The same voice again from the word in progress after a moment, then a
   // local voice for the rest, then the end.
   #recover(error) {
-    this.#offset = this.#word;
     this.#current = null;
+    if (TEXT_ERRORS.includes(error)) {
+      this.#onSkip(error);
+      return this.#next();
+    }
+    this.#offset = this.#word;
+    this.#failedAt = this.#word;
     if (this.#failures < RETRY_DELAYS_MS.length) {
       this.#wait(RETRY_DELAYS_MS[this.#failures++], () => this.#speak());
       return;

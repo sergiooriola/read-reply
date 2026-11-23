@@ -28,7 +28,7 @@ def main(argv: list[str] | None = None) -> None:
         if args.print:
             print("\n\n".join(reply_chunks(args.pane)))
         else:
-            read_or_stop(args.pane, state_dir())
+            read_or_stop(args.pane, state_dir(), rate_file())
     except UserError as error:
         notify(str(error))
         sys.exit(1)
@@ -62,7 +62,7 @@ def reply_chunks(pane: str) -> list[str]:
     return chunks
 
 
-def read_or_stop(pane: str, state: Path) -> None:
+def read_or_stop(pane: str, state: Path, rate: Path) -> None:
     """Reads the reply, or stops the reading in progress if there is one."""
     state.mkdir(mode=0o700, parents=True, exist_ok=True)
     with (state / "lock").open("w") as lock:
@@ -71,7 +71,7 @@ def read_or_stop(pane: str, state: Path) -> None:
         except BlockingIOError:
             request_stop(state)
             return
-        with Player(state) as player:
+        with Player(state, rate) as player:
             chunks = reply_chunks(pane)
             if not player.stop_requested:
                 player.play(chunks)
@@ -86,6 +86,14 @@ def state_dir() -> Path:
         if runtime
         else Path.home() / ".cache" / "read-reply"
     )
+
+
+def rate_file() -> Path:
+    """Where the speed chosen in the window is kept between readings."""
+    state = os.environ.get("XDG_STATE_HOME", "")
+    # The XDG Base Directory spec: a relative path is to be ignored.
+    home = Path(state) if Path(state).is_absolute() else Path.home() / ".local/state"
+    return home / "read-reply" / "rate"
 
 
 def notify(message: str) -> None:

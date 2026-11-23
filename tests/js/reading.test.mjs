@@ -67,9 +67,10 @@ class FakeSynth extends EventTarget {
 
 const settle = () => new Promise((resolve) => setImmediate(resolve));
 
-function reading(synth, chunks, options = {}) {
+function reading(synth, chunks, options = {}, { start = true } = {}) {
   const finished = [];
   const progress = [];
+  const skipped = [];
   const instance = new Reading({
     synth,
     Utterance,
@@ -78,11 +79,12 @@ function reading(synth, chunks, options = {}) {
     preferred: ["Álvaro", "Pablo"],
     rate: 1,
     onProgress: (fraction) => progress.push(fraction),
+    onSkip: (error) => skipped.push(error),
     onFinish: (error) => finished.push(error),
     ...options,
   });
-  instance.start();
-  return { reading: instance, finished, progress };
+  if (start) instance.start();
+  return { reading: instance, finished, progress, skipped };
 }
 
 describe("Reading", () => {
@@ -145,6 +147,18 @@ describe("Reading", () => {
     assert.equal(synth.last.rate, 1.2);
   });
 
+  test("a new speed is not forced on a chunk that started with it", (t) => {
+    t.mock.timers.enable({ apis: ["setTimeout"] });
+    const { reading: r } = reading(synth, ["Uno.", "Dos."]);
+
+    r.setRate(1.2);
+    synth.end();
+    t.mock.timers.tick(RATE_SETTLE_MS);
+
+    assert.equal(synth.spoken.length, 2);
+    assert.equal(synth.last.rate, 1.2);
+  });
+
   test("a new speed while paused is used on resuming", (t) => {
     t.mock.timers.enable({ apis: ["setTimeout"] });
     const { reading: r } = reading(synth, ["Uno."]);
@@ -193,6 +207,32 @@ describe("Reading", () => {
     assert.equal(synth.last.voice, ALVARO);
   });
 
+  test("failing again on the same word uses up the retries", (t) => {
+    t.mock.timers.enable({ apis: ["setTimeout"] });
+    reading(synth, ["Uno dos tres."]);
+    synth.word(4);
+
+    for (const delay of RETRY_DELAYS_MS) {
+      synth.fail();
+      t.mock.timers.tick(delay);
+      synth.word(0); // the restart says the same word, and fails
+    }
+    synth.fail();
+
+    assert.equal(synth.last.voice, PABLO);
+  });
+
+  test("a chunk rejected for its text is left out, and the rest read", () => {
+    const { finished, skipped } = reading(synth, ["Uno.", "Dos."]);
+
+    synth.fail("text-too-long");
+    assert.equal(synth.last.text, "Dos.");
+    synth.end();
+
+    assert.deepEqual(skipped, ["text-too-long"]);
+    assert.deepEqual(finished, [null]);
+  });
+
   test("when no voice can go on, it finishes with the error", (t) => {
     t.mock.timers.enable({ apis: ["setTimeout"] });
     synth.voices = [ALVARO];
@@ -236,6 +276,46 @@ describe("Reading", () => {
     assert.equal(synth.current, null);
     assert.equal(synth.spoken.length, 1);
     assert.deepEqual(finished, [null]);
+  });
+});
+
+describe("Reading before it starts", () => {
+  let synth;
+  beforeEach(() => {
+    synth = new FakeSynth();
+  });
+
+  test("a stop means it never speaks", () => {
+    const { reading: r, finished } = reading(synth, ["Uno."], {}, { start: false });
+
+    r.stop();
+    r.start();
+
+    assert.equal(synth.spoken.length, 0);
+    assert.deepEqual(finished, [null]);
+  });
+
+  test("a new speed waits for the start", (t) => {
+    t.mock.timers.enable({ apis: ["setTimeout"] });
+    const { reading: r } = reading(synth, ["Uno."], {}, { start: false });
+
+    r.setRate(1.4);
+    t.mock.timers.tick(RATE_SETTLE_MS);
+    assert.equal(synth.spoken.length, 0);
+    r.start();
+
+    assert.equal(synth.last.rate, 1.4);
+  });
+
+  test("a pause holds the start until resuming", () => {
+    const { reading: r } = reading(synth, ["Uno."], {}, { start: false });
+
+    r.togglePause();
+    r.start();
+    assert.equal(synth.spoken.length, 0);
+    r.togglePause();
+
+    assert.equal(synth.last.text, "Uno.");
   });
 });
 

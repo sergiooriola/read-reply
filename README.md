@@ -51,10 +51,10 @@ y `herdr server reload-config` para cargarlo. Los errores salen como notificacio
 3. pandoc convierte el Markdown en párrafos para el oído: sin marcas, con los bloques de código anunciados en vez de deletreados, las tablas fila a fila y los enlaces por su texto (`speech_text.py`).
 4. Edge los lee con la Web Speech API estándar, que en Edge incluye las voces naturales de Microsoft, en una ventana de aplicación (`--app`) con los controles. Un servidor HTTP efímero en `127.0.0.1` le pasa a la página el texto y la orden de parar. La página se cierra al acabar, y Edge con ella (`player.py`, `player.html`).
 5. La página lee fragmento a fragmento (`reading.mjs`). Para pausar o cambiar la velocidad, corta el fragmento y vuelve a pedirlo desde el principio de la frase o desde la palabra en curso, que Edge le dice con eventos `boundary`. Si Álvaro falla, lo intenta otra vez con él y, si vuelve a fallar, sigue con una voz local.
-6. Mientras se prepara el texto, un script de PowerShell busca la ventana de Windows Terminal, para abrir la de lectura arriba en su centro; cuando se abre, la deja por encima de las demás y devuelve el foco a la ventana que lo tenía (`desktop.py`, `desktop.ps1`).
+6. Mientras se prepara el texto, un script de PowerShell busca la ventana de Windows Terminal. Cuando se abre la de lectura, que reconoce por su perfil de Edge, la coloca arriba en el centro del terminal, por encima de las demás, y devuelve el foco a la ventana que lo tenía (`desktop.py`, `desktop.ps1`).
 7. Una segunda pulsación encuentra ocupado el bloqueo de la lectura en curso y le pide que pare (`cli.py`).
 
-Deja dos cosas fuera del repositorio: un perfil propio de Edge en `%LOCALAPPDATA%\read-reply\edge-profile`, de unos 16 MB y aparte del tuyo, y el bloqueo en `$XDG_RUNTIME_DIR/read-reply/`.
+Deja tres cosas fuera del repositorio: un perfil propio de Edge en `%LOCALAPPDATA%\read-reply\edge-profile`, de unos 16 MB y aparte del tuyo; la velocidad elegida, en `~/.local/state/read-reply/rate` (o bajo `XDG_STATE_HOME`), y el bloqueo, en `$XDG_RUNTIME_DIR/read-reply/`.
 
 ### Por qué así
 

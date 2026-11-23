@@ -85,38 +85,21 @@
     maximumFractionDigits: 1,
   });
 
-  // The speed is remembered in Edge's profile, which read-reply keeps apart.
-  function savedRate() {
-    try {
-      const rate = Number(localStorage.getItem("rate"));
-      return rate >= RATE_MIN && rate <= RATE_MAX ? rate : 1;
-    } catch {
-      return 1;
-    }
-  }
-
-  function saveRate(rate) {
-    try {
-      localStorage.setItem("rate", String(rate));
-    } catch {
-      // not remembered, nothing else lost
-    }
-  }
-
   async function main() {
     const reply = await (await fetch(base + "reply")).json();
-    const voice = await pickVoice(speechSynthesis, reply.voices);
     const { promise: finished, resolve: finish } = Promise.withResolvers();
+    // The controls and a stop work at once; it speaks once the voice is known.
     const reading = new Reading({
       synth: speechSynthesis,
       Utterance: SpeechSynthesisUtterance,
       chunks: reply.chunks,
-      voice,
+      voice: null,
       preferred: reply.voices,
-      rate: savedRate(),
+      rate: Math.min(Math.max(reply.rate, RATE_MIN), RATE_MAX),
       onProgress: (fraction) => {
         $("progress").style.width = `${Math.min(fraction, 1) * 100}%`;
       },
+      onSkip: (error) => post("error", error),
       onFinish: finish,
     });
 
@@ -130,14 +113,15 @@
       const label = reading.paused ? "Continuar" : "Pausar";
       $("toggle").setAttribute("aria-label", label);
       $("toggle").title = `${label} (espacio)`;
-      $("pause-icon").hidden = reading.paused;
-      $("play-icon").hidden = !reading.paused;
+      // SVG elements have no "hidden" property: the attribute itself.
+      $("pause-icon").toggleAttribute("hidden", reading.paused);
+      $("play-icon").toggleAttribute("hidden", !reading.paused);
     };
     const changeRate = (steps) => {
       const rate = Math.round((reading.rate + steps * RATE_STEP) * 10) / 10;
       if (rate < RATE_MIN || rate > RATE_MAX) return;
       reading.setRate(rate);
-      saveRate(rate);
+      post("rate", String(rate)); // read-reply keeps it for the next reading
       showRate();
     };
 
@@ -166,6 +150,10 @@
         reading.stop(); // read-reply is gone
       }
     }, 200);
+    reading.voice = await Promise.race([
+      pickVoice(speechSynthesis, reply.voices),
+      finished.then(() => null), // stopped meanwhile: start() does nothing
+    ]);
     reading.start();
     const error = await finished;
     clearInterval(poll);

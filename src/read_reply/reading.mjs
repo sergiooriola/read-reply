@@ -1,17 +1,18 @@
 // The reading behind player.html: speaks the chunks one after another, and
-// lets the listener pause, change the speed and stop.
+// lets the listener pause, change the speed, go to another sentence and stop.
 //
 // Edge's online voices, such as Álvaro, ignore speechSynthesis.pause(), so a
 // pause cancels the utterance, and resuming speaks again from the start of the
 // sentence in progress. A new speed restarts at the word in progress, which
-// the "boundary" events report. No DOM here: the tests run it in Node.
+// the "boundary" events report; a jump, at the start of a sentence. No DOM
+// here: the tests run it in Node.
 
 export const RATE_MIN = 0.5;
 export const RATE_MAX = 2;
 export const RATE_STEP = 0.1;
-// A new speed waits for the clicks to stop: each restart is a new request to
-// the online voice, and quick ones make it fail more often.
-export const RATE_SETTLE_MS = 400;
+// A restart, for a new speed or a jump, waits for the clicks to stop: each
+// one is a new request to the online voice, and quick ones make it fail more.
+export const SETTLE_MS = 400;
 // Microsoft's service fails now and then for a moment ("synthesis-failed"):
 // the same voice is tried again after these waits before a local one.
 export const RETRY_DELAYS_MS = [500, 1500];
@@ -58,11 +59,18 @@ export function localVoice(synth, preferred) {
   );
 }
 
-// Where the sentence that holds text[index] starts. Sentences end as
-// speech_text.split_sentences cuts them.
+// Where each sentence of the text starts. A sentence ends at . ! ? … : or ;
+// and a space, with any closing quotes or brackets between them, before
+// anything but a lowercase letter: "«¿Sí?» para" or "etc. y" go on.
+export function sentenceStarts(text) {
+  const ends = [...text.matchAll(/[.!?…:;][»”’"')\]]*\s+(?!\p{Ll})/gu)];
+  const starts = ends.map((end) => end.index + end[0].length);
+  return [0, ...starts.filter((start) => start < text.length)];
+}
+
+// Where the sentence that holds text[index] starts.
 export function sentenceStart(text, index) {
-  const last = [...text.slice(0, index).matchAll(/[.!?…:;]\s+/g)].at(-1);
-  return last ? last.index + last[0].length : 0;
+  return sentenceStarts(text).findLast((start) => start <= index);
 }
 
 export class Reading {
@@ -75,8 +83,9 @@ export class Reading {
   #onProgress;
   #onSkip;
   #onFinish;
+  #starts; // where each chunk starts in the whole reply
   #total;
-  #read = 0; // characters of the chunks already read
+  #sentences; // where each sentence starts in the whole reply
   #index = 0; // the chunk being read
   #offset = 0; // where in it the utterance in progress starts
   #word = 0; // where in it the word being spoken starts
@@ -84,6 +93,7 @@ export class Reading {
   #failures = 0; // in a row, without getting past where the last one was
   #failedAt = -1; // where in the chunk the last failure was
   #started = false; // the controls work before, while the voice loads
+  #held = false; // the slider is held: the end waits, it may go back
   #paused = false;
   #finished = false;
   #waiting = null; // a retry, or a new speed waiting for the clicks to stop
@@ -112,7 +122,15 @@ export class Reading {
     this.#onProgress = onProgress;
     this.#onSkip = onSkip;
     this.#onFinish = onFinish;
-    this.#total = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+    this.#starts = [];
+    this.#total = 0;
+    for (const chunk of chunks) {
+      this.#starts.push(this.#total);
+      this.#total += chunk.length;
+    }
+    this.#sentences = chunks.flatMap((chunk, index) =>
+      sentenceStarts(chunk).map((start) => this.#starts[index] + start),
+    );
   }
 
   get paused() {
@@ -125,7 +143,7 @@ export class Reading {
   }
 
   togglePause() {
-    if (this.#finished) return;
+    if (this.#finished || this.#index >= this.#chunks.length) return; // held at the end
     this.#paused = !this.#paused;
     if (this.#paused) {
       this.#cancelWait();
@@ -138,7 +156,7 @@ export class Reading {
   setRate(rate) {
     this.rate = rate;
     if (!this.#started || this.#paused || this.#finished) return; // used later
-    this.#wait(RATE_SETTLE_MS, () => {
+    this.#wait(SETTLE_MS, () => {
       // A chunk that started meanwhile already has it.
       if (this.#current?.rate === this.rate) return;
       this.#interrupt(this.#word);
@@ -146,12 +164,40 @@ export class Reading {
     });
   }
 
+  // Goes to the sentence at that point of the reply, from 0 to 1.
+  seek(fraction) {
+    const at = fraction * this.#total;
+    this.#jump(this.#sentences.findLast((start) => start <= at) ?? 0);
+  }
+
+  // Goes to the sentence before (-1) or after (1) the one in progress; after
+  // the last one there is none.
+  skip(direction) {
+    const at = this.#starts[this.#index] + this.#word;
+    const current =
+      this.#index < this.#chunks.length
+        ? this.#sentences.findLastIndex((start) => start <= at)
+        : this.#sentences.length; // held at the end: back is the last one
+    const target = this.#sentences[Math.max(current + direction, 0)];
+    if (target !== undefined) this.#jump(target);
+  }
+
+  // While the slider is held, the reading does not end: the listener may be
+  // about to go back.
+  hold(held) {
+    this.#held = held;
+    if (!held && this.#index >= this.#chunks.length) this.#finish(null);
+  }
+
   stop() {
     this.#finish(null);
   }
 
   #speak() {
-    if (this.#index >= this.#chunks.length) return this.#finish(null);
+    if (this.#index >= this.#chunks.length) {
+      if (!this.#held) this.#finish(null);
+      return;
+    }
     const offset = this.#offset;
     const utterance = new this.#Utterance(this.#chunks[this.#index].slice(offset));
     utterance.voice = this.voice;
@@ -161,7 +207,7 @@ export class Reading {
       if (utterance !== this.#current || event.name !== "word") return;
       this.#word = offset + event.charIndex;
       if (this.#word > this.#failedAt) this.#failures = 0; // it got past it
-      this.#onProgress((this.#read + this.#word) / this.#total);
+      this.#onProgress((this.#starts[this.#index] + this.#word) / this.#total);
     };
     utterance.onend = () => {
       if (utterance === this.#current) this.#next();
@@ -176,7 +222,6 @@ export class Reading {
   }
 
   #next() {
-    this.#read += this.#chunks[this.#index].length;
     this.#index += 1;
     this.#offset = 0;
     this.#failures = 0;
@@ -205,6 +250,21 @@ export class Reading {
       return this.#speak();
     }
     this.#finish(error);
+  }
+
+  // Moves to a place in the whole reply: silence at once, and the voice there
+  // once the clicks stop.
+  #jump(at) {
+    if (this.#finished) return;
+    this.#index = this.#starts.findLastIndex((start) => start <= at);
+    this.#offset = this.#word = at - this.#starts[this.#index];
+    this.#failures = 0;
+    this.#failedAt = -1;
+    this.#onProgress(at / this.#total);
+    if (!this.#started || this.#paused) return; // starting or resuming goes there
+    this.#current = null;
+    this.#synth.cancel();
+    this.#wait(SETTLE_MS, () => this.#speak());
   }
 
   // Cancels the utterance in progress; the next one starts at "from".

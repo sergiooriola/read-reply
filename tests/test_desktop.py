@@ -14,12 +14,12 @@ from read_reply.desktop import Desktop, Terminal, window_pixels, window_position
 @pytest.mark.parametrize(
     ("terminal", "position"),
     [
-        (Terminal(100, 50, 1700, monitor_left=0, monitor_top=0, scale=1.0), (750, 58)),
+        (Terminal(100, 50, 1700, monitor_left=0, monitor_top=0, scale=1.0), (730, 58)),
         # On a monitor at 150 %, to the right of one at 100 % that is 1920 wide:
         # its pixels from its corner count two thirds.
         (
             Terminal(2020, 100, 4420, monitor_left=1920, monitor_top=0, scale=1.5),
-            (2637, 75),
+            (2617, 75),
         ),
     ],
     ids=["100%", "150%"],
@@ -33,8 +33,8 @@ def test_the_window_goes_to_the_top_of_the_terminal_centred(
 def test_the_script_puts_the_window_in_physical_pixels() -> None:
     terminal = Terminal(2020, 100, 4420, monitor_left=1920, monitor_top=0, scale=1.5)
 
-    # 300 x 110 at 150 % is 450 pixels wide; 8 of margin, 12.
-    assert window_pixels(terminal) == (2995, 112)
+    # 340 x 110 at 150 % is 510 pixels wide; 8 of margin, 12.
+    assert window_pixels(terminal) == (2965, 112)
 
 
 def fake_powershell(monkeypatch: pytest.MonkeyPatch, script: Path, body: str) -> None:
@@ -71,7 +71,7 @@ def test_the_script_tells_the_terminal_and_hears_when_edge_starts(
 
     assert terminal == Terminal(**TERMINAL)  # type: ignore[arg-type]
     edge = json.loads(received.read_text())
-    assert edge == {"profile": "C:\\profile", "x": 735, "y": 12}
+    assert edge == {"profile": "C:\\profile", "x": 705, "y": 12}
 
 
 def test_without_powershell_the_reading_goes_on() -> None:

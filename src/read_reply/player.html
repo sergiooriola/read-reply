@@ -11,7 +11,6 @@
     --button-hover: light-dark(#ebebeb, #383838);
     --border: light-dark(#c8c8c8, #454545);
     --accent: light-dark(#005fb8, #60cdff);
-    --track: light-dark(#d6d6d6, #3a3a3a);
     font: 14px/1.2 "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
   }
   html, body { height: 100%; margin: 0; }
@@ -19,18 +18,18 @@
   main {
     box-sizing: border-box;
     height: 100%;
-    padding: 10px 12px;
+    padding: 8px 12px;
     display: grid;
     grid-template-rows: 1fr auto;
-    gap: 10px;
+    gap: 6px;
   }
-  .controls { display: flex; align-items: center; gap: 6px; }
+  .controls { display: flex; align-items: center; gap: 4px; }
   .spacer { flex: 1; }
   button {
     display: grid;
     place-items: center;
-    width: 36px;
-    height: 36px;
+    width: 34px;
+    height: 34px;
     padding: 0;
     border: 1px solid var(--border);
     border-radius: 6px;
@@ -42,18 +41,23 @@
   button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   button svg { width: 18px; height: 18px; fill: currentColor; }
   svg [hidden] { display: none; } /* SVG ignores the attribute on its own */
-  #toggle { width: 44px; }
+  #toggle { width: 40px; }
   output { min-width: 3.4em; text-align: center; font-variant-numeric: tabular-nums; }
-  .track { height: 3px; border-radius: 2px; background: var(--track); overflow: hidden; }
-  #progress { height: 100%; width: 0; background: var(--accent); }
+  #position { width: 100%; margin: 0; accent-color: var(--accent); }
 </style>
 <main>
   <div class="controls">
+    <button id="previous" aria-label="Frase anterior" title="Frase anterior (←)">
+      <svg aria-hidden="true" viewBox="0 0 16 16"><rect x="2.5" y="3" width="2" height="10" rx="0.75"/><path d="M13.5 3.6v8.8a.8.8 0 0 1-1.24.67L6 8.67a.8.8 0 0 1 0-1.34l6.26-4.4a.8.8 0 0 1 1.24.67Z"/></svg>
+    </button>
     <button id="toggle" aria-label="Pausar" title="Pausar (espacio)">
       <svg aria-hidden="true" viewBox="0 0 16 16">
         <g id="pause-icon"><rect x="3" y="2" width="3.5" height="12" rx="1"/><rect x="9.5" y="2" width="3.5" height="12" rx="1"/></g>
         <path id="play-icon" hidden d="M4 2.5v11a1 1 0 0 0 1.5.86l9-5.5a1 1 0 0 0 0-1.72l-9-5.5A1 1 0 0 0 4 2.5Z"/>
       </svg>
+    </button>
+    <button id="next" aria-label="Frase siguiente" title="Frase siguiente (→)">
+      <svg aria-hidden="true" viewBox="0 0 16 16"><rect x="11.5" y="3" width="2" height="10" rx="0.75"/><path d="M2.5 3.6v8.8a.8.8 0 0 0 1.24.67L10 8.67a.8.8 0 0 0 0-1.34L3.74 2.93a.8.8 0 0 0-1.24.67Z"/></svg>
     </button>
     <span class="spacer"></span>
     <button id="slower" aria-label="Más lento" title="Más lento (−)">
@@ -68,7 +72,7 @@
       <svg aria-hidden="true" viewBox="0 0 16 16"><rect x="3" y="3" width="10" height="10" rx="1.5"/></svg>
     </button>
   </div>
-  <div class="track"><div id="progress"></div></div>
+  <input id="position" type="range" min="0" max="1000" value="0" aria-label="Punto de la respuesta">
 </main>
 <script type="module">
   // The reading window: reading.mjs speaks; this page shows the controls and
@@ -92,6 +96,9 @@
   async function main() {
     const reply = await (await fetch(base + "reply")).json();
     const { promise: finished, resolve: finish } = Promise.withResolvers();
+    let dragging = false; // the slider follows the voice, but not under the pointer
+    let holder = null; // the pointer holding the slider
+    let releasing = null; // the release, once "change" has had its turn
     // The controls and a stop work at once; it speaks once the voice is known.
     const reading = new Reading({
       synth: speechSynthesis,
@@ -101,7 +108,7 @@
       preferred: reply.voices,
       rate: Math.min(Math.max(reply.rate, RATE_MIN), RATE_MAX),
       onProgress: (fraction) => {
-        $("progress").style.width = `${Math.min(fraction, 1) * 100}%`;
+        if (!dragging) $("position").value = Math.round(fraction * 1000);
       },
       onSkip: (error) => send("error", error),
       onFinish: finish,
@@ -130,18 +137,58 @@
     };
 
     $("toggle").addEventListener("click", togglePause);
+    $("previous").addEventListener("click", () => reading.skip(-1));
+    $("next").addEventListener("click", () => reading.skip(1));
+    // Held, the slider keeps the reading from ending. "change" comes after
+    // "pointerup", in the same task: the jump goes first, then the release.
+    $("position").addEventListener("pointerdown", (event) => {
+      if (event.button !== 0 || (holder !== null && releasing === null)) return;
+      clearTimeout(releasing); // taken again before the last release
+      releasing = null;
+      holder = event.pointerId;
+      dragging = true;
+      reading.hold(true);
+    });
+    const release = () => {
+      releasing = null;
+      holder = null;
+      dragging = false;
+      reading.hold(false);
+    };
+    // Let go anywhere: the pointer may leave the slider, or the window.
+    for (const name of ["pointerup", "pointercancel"]) {
+      addEventListener(name, (event) => {
+        if (event.pointerId === holder) releasing ??= setTimeout(release);
+      });
+    }
+    addEventListener("blur", () => {
+      if (holder !== null) releasing ??= setTimeout(release);
+    });
+    $("position").addEventListener("change", (event) => {
+      dragging = false; // the slider shows where the jump lands
+      reading.seek(event.target.value / 1000);
+    });
     $("slower").addEventListener("click", () => changeRate(-1));
     $("faster").addEventListener("click", () => changeRate(1));
     $("stop").addEventListener("click", () => reading.stop());
     document.addEventListener("keydown", (event) => {
       const action = {
         " ": togglePause,
+        // The slider's own keys too, which would land in the same sentence.
+        ArrowLeft: () => reading.skip(-1),
+        ArrowDown: () => reading.skip(-1),
+        PageDown: () => reading.skip(-1),
+        ArrowRight: () => reading.skip(1),
+        ArrowUp: () => reading.skip(1),
+        PageUp: () => reading.skip(1),
+        Home: () => reading.seek(0),
+        End: () => reading.seek(1),
         "-": () => changeRate(-1),
         "+": () => changeRate(1),
         Escape: () => reading.stop(),
       }[event.key];
       if (!action) return;
-      event.preventDefault(); // Space would also press the focused button
+      event.preventDefault(); // or Space presses a button, an arrow moves the slider
       action();
     });
     showRate();

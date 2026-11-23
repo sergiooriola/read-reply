@@ -225,8 +225,8 @@ def test_edge_opens_the_page_as_a_small_window_over_the_terminal() -> None:
     command = edge_command("http://127.0.0.1:1/x/", "C:\\profile", terminal)
 
     assert "--app=http://127.0.0.1:1/x/" in command
-    assert "--window-size=300,110" in command
-    assert "--window-position=810,8" in command
+    assert "--window-size=340,110" in command
+    assert "--window-position=790,8" in command
     assert "--user-data-dir=C:\\profile" in command
     assert "--headless" not in command
 

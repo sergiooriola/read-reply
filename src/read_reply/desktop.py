@@ -1,9 +1,9 @@
 """The reading window's place on the Windows desktop, and the focus handed back.
 
-The window opens in the bottom-right corner of the monitor of the window in
-front when the key is pressed, the terminal, and the focus goes back to that
-window: listening must not take the keyboard away. Only Windows knows its
-windows, so a PowerShell script (desktop.ps1) does both.
+The window opens at the top of the terminal, centred, and stays above it; the
+focus goes back to the window that had it: listening must not take the
+keyboard away. Only Windows knows its windows, so a PowerShell script
+(desktop.ps1) does both.
 """
 
 import base64
@@ -19,7 +19,7 @@ from typing import Self
 POWERSHELL = "powershell.exe"
 # The window's size, in CSS pixels: player.html is laid out for it.
 WINDOW_SIZE = (300, 110)
-MARGIN = 12
+MARGIN = 8
 MONITOR_TIMEOUT_S = 3.0
 
 
@@ -30,26 +30,32 @@ def powershell_command(script: str) -> list[str]:
 
 
 @dataclass(frozen=True)
-class Monitor:
-    """A monitor's work area, in physical pixels, and its scale."""
+class Terminal:
+    """The terminal window's frame and its monitor's top-left corner, in
+    physical pixels, and the monitor's scale."""
 
     left: int
     top: int
     right: int
-    bottom: int
+    monitor_left: int
+    monitor_top: int
     scale: float
 
 
-def window_position(monitor: Monitor) -> tuple[int, int]:
-    """Where the window goes, in the coordinates of Edge's --window-position.
+def window_position(terminal: Terminal) -> tuple[int, int]:
+    """Top centre of the terminal, in the coordinates of Edge's --window-position.
 
     Chromium places windows in device-independent pixels: each monitor keeps
-    its top-left corner, and its size is divided by its scale.
+    its top-left corner, and distances within it are divided by its scale.
     """
-    width, height = WINDOW_SIZE
-    x = monitor.left + (monitor.right - monitor.left) / monitor.scale
-    y = monitor.top + (monitor.bottom - monitor.top) / monitor.scale
-    return round(x - width - MARGIN), round(y - height - MARGIN)
+
+    def independent(pixel: float, origin: int) -> float:
+        return origin + (pixel - origin) / terminal.scale
+
+    width, _height = WINDOW_SIZE
+    centre = independent((terminal.left + terminal.right) / 2, terminal.monitor_left)
+    top = independent(terminal.top, terminal.monitor_top)
+    return round(centre - width / 2), round(top + MARGIN)
 
 
 class Desktop:
@@ -89,8 +95,8 @@ class Desktop:
             self._script.kill()
             self._script.wait()
 
-    def monitor(self) -> Monitor | None:
-        """The monitor of the window in front when the reading started."""
+    def terminal(self) -> Terminal | None:
+        """The terminal's window when the reading started."""
         if self._script is None or self._script.stdout is None:
             return None
         stdout = self._script.stdout
@@ -99,11 +105,12 @@ class Desktop:
             return None
         try:
             fields = json.loads(stdout.readline())
-            return Monitor(
+            return Terminal(
                 left=int(fields["left"]),
                 top=int(fields["top"]),
                 right=int(fields["right"]),
-                bottom=int(fields["bottom"]),
+                monitor_left=int(fields["monitor_left"]),
+                monitor_top=int(fields["monitor_top"]),
                 scale=float(fields["scale"]) or 1.0,
             )
         except ValueError, KeyError, TypeError:

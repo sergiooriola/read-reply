@@ -12,6 +12,9 @@ export const RATE_STEP = 0.1;
 // A new speed waits for the clicks to stop: each restart is a new request to
 // the online voice, and quick ones make it fail more often.
 export const RATE_SETTLE_MS = 400;
+// Microsoft's service fails now and then for a moment ("synthesis-failed"):
+// the same voice is tried again after these waits before a local one.
+export const RETRY_DELAYS_MS = [500, 1500];
 // Edge loads its online voices after the page, and announces them.
 export const VOICE_WAIT_MS = 5000;
 
@@ -75,10 +78,10 @@ export class Reading {
   #offset = 0; // where in it the utterance in progress starts
   #word = 0; // where in it the word being spoken starts
   #current = null; // the utterance in progress; any other was cancelled
-  #retried = false;
+  #failures = 0; // in a row, since the voice last spoke
   #paused = false;
   #finished = false;
-  #restart = null; // a new speed waiting for the clicks to stop
+  #waiting = null; // a retry, or a new speed waiting for the clicks to stop
 
   // synth and Utterance: speechSynthesis and SpeechSynthesisUtterance.
   // preferred: voice names, for a local voice when the online one fails.
@@ -107,7 +110,7 @@ export class Reading {
     if (this.#finished) return;
     this.#paused = !this.#paused;
     if (this.#paused) {
-      this.#cancelRestart();
+      this.#cancelWait();
       this.#interrupt(sentenceStart(this.#chunks[this.#index], this.#word));
     } else {
       this.#speak();
@@ -116,13 +119,11 @@ export class Reading {
 
   setRate(rate) {
     this.rate = rate;
-    this.#cancelRestart();
     if (this.#paused || this.#finished) return; // resuming uses it
-    this.#restart = setTimeout(() => {
-      this.#restart = null;
+    this.#wait(RATE_SETTLE_MS, () => {
       this.#interrupt(this.#word);
       this.#speak();
-    }, RATE_SETTLE_MS);
+    });
   }
 
   stop() {
@@ -139,12 +140,12 @@ export class Reading {
     utterance.onboundary = (event) => {
       if (utterance !== this.#current || event.name !== "word") return;
       this.#word = offset + event.charIndex;
-      this.#retried = false; // it is speaking again
+      this.#failures = 0; // it is speaking again
       this.#onProgress((this.#read + this.#word) / this.#total);
     };
     utterance.onend = () => {
       if (utterance !== this.#current) return;
-      this.#retried = false;
+      this.#failures = 0;
       this.#read += this.#chunks[this.#index].length;
       this.#index += 1;
       this.#offset = 0;
@@ -159,17 +160,19 @@ export class Reading {
     this.#synth.speak(utterance);
   }
 
-  // Álvaro fails now and then ("synthesis-failed"): once more with him from
-  // the word in progress, then with a local voice for the rest.
+  // The same voice again from the word in progress after a moment, then a
+  // local voice for the rest, then the end.
   #recover(error) {
     this.#offset = this.#word;
-    if (!this.#retried) {
-      this.#retried = true;
-      return this.#speak();
+    this.#current = null;
+    if (this.#failures < RETRY_DELAYS_MS.length) {
+      this.#wait(RETRY_DELAYS_MS[this.#failures++], () => this.#speak());
+      return;
     }
     const local = !this.voice?.localService && localVoice(this.#synth, this.#preferred);
     if (local) {
       this.voice = local;
+      this.#failures = 0;
       return this.#speak();
     }
     this.#finish(error);
@@ -182,15 +185,25 @@ export class Reading {
     this.#synth.cancel();
   }
 
-  #cancelRestart() {
-    clearTimeout(this.#restart);
-    this.#restart = null;
+  // Runs "then" after "ms", instead of whatever was waiting: a new speed
+  // replaces a retry, since both speak again.
+  #wait(ms, then) {
+    this.#cancelWait();
+    this.#waiting = setTimeout(() => {
+      this.#waiting = null;
+      then();
+    }, ms);
+  }
+
+  #cancelWait() {
+    clearTimeout(this.#waiting);
+    this.#waiting = null;
   }
 
   #finish(error) {
     if (this.#finished) return;
     this.#finished = true;
-    this.#cancelRestart();
+    this.#cancelWait();
     this.#current = null;
     this.#synth.cancel();
     this.#onFinish(error);

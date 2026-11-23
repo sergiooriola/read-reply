@@ -10,7 +10,7 @@ from urllib.request import Request, urlopen
 import pytest
 
 from read_reply import player as player_module
-from read_reply.desktop import Monitor
+from read_reply.desktop import Terminal
 from read_reply.errors import UserError
 from read_reply.player import (
     STOP_URL_FILE,
@@ -184,19 +184,19 @@ def test_a_page_that_ignores_a_stop_is_given_up_on(
         player.wait_for(FakeEdge(exited=False))
 
 
-def test_edge_opens_the_page_as_a_small_window_in_the_corner() -> None:
-    monitor = Monitor(left=0, top=0, right=1920, bottom=1080, scale=1.0)
+def test_edge_opens_the_page_as_a_small_window_over_the_terminal() -> None:
+    terminal = Terminal(0, 0, 1920, monitor_left=0, monitor_top=0, scale=1.0)
 
-    command = edge_command("http://127.0.0.1:1/x/", "C:\\profile", monitor)
+    command = edge_command("http://127.0.0.1:1/x/", "C:\\profile", terminal)
 
     assert "--app=http://127.0.0.1:1/x/" in command
     assert "--window-size=300,110" in command
-    assert "--window-position=1608,958" in command
+    assert "--window-position=810,8" in command
     assert "--user-data-dir=C:\\profile" in command
     assert "--headless" not in command
 
 
-def test_without_its_monitor_edge_places_the_window() -> None:
+def test_without_the_terminal_edge_places_the_window() -> None:
     command = edge_command("http://127.0.0.1:1/x/", "C:\\profile", None)
 
     assert not any(arg.startswith("--window-position") for arg in command)

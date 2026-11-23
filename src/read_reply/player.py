@@ -24,7 +24,7 @@ from urllib.request import ProxyHandler, Request, build_opener
 from read_reply.desktop import (
     WINDOW_SIZE,
     Desktop,
-    Monitor,
+    Terminal,
     powershell_command,
     window_position,
 )
@@ -115,7 +115,7 @@ class Player:
         self._chunks = chunks
         profile = edge_profile()
         edge = subprocess.Popen(
-            edge_command(self.url, profile, self._desktop.monitor()),
+            edge_command(self.url, profile, self._desktop.terminal()),
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
@@ -208,12 +208,12 @@ class Player:
         return Handler
 
 
-def edge_command(url: str, profile: str, monitor: Monitor | None) -> list[str]:
+def edge_command(url: str, profile: str, terminal: Terminal | None) -> list[str]:
     """Edge with the page in a window of its own, in its own profile."""
     width, height = WINDOW_SIZE
     position = []
-    if monitor:  # else where Edge decides
-        x, y = window_position(monitor)
+    if terminal:  # else where Edge decides
+        x, y = window_position(terminal)
         position = [f"--window-position={x},{y}"]
     return [
         str(EDGE),

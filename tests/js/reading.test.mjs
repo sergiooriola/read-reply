@@ -1,10 +1,11 @@
 // The reading engine of player.html, with a speechSynthesis that the tests
 // drive by hand: no sound, no browser.
 import assert from "node:assert/strict";
-import { beforeEach, describe, mock, test } from "node:test";
+import { beforeEach, describe, test } from "node:test";
 
 import {
   RATE_SETTLE_MS,
+  RETRY_DELAYS_MS,
   Reading,
   VOICE_WAIT_MS,
   localVoice,
@@ -128,50 +129,48 @@ describe("Reading", () => {
     assert.equal(synth.last.text, "Segunda frase larga.");
   });
 
-  test("a new speed waits for the clicks to stop, then goes on from the word", () => {
-    mock.timers.enable({ apis: ["setTimeout"] });
-    try {
-      const { reading: r } = reading(synth, ["Una frase bastante larga."]);
-      synth.word(10);
+  test("a new speed waits for the clicks to stop, then goes on from the word", (t) => {
+    t.mock.timers.enable({ apis: ["setTimeout"] });
+    const { reading: r } = reading(synth, ["Una frase bastante larga."]);
+    synth.word(10);
 
-      r.setRate(1.1);
-      r.setRate(1.2);
-      mock.timers.tick(RATE_SETTLE_MS - 1);
-      assert.equal(synth.spoken.length, 1);
-      mock.timers.tick(1);
+    r.setRate(1.1);
+    r.setRate(1.2);
+    t.mock.timers.tick(RATE_SETTLE_MS - 1);
+    assert.equal(synth.spoken.length, 1);
+    t.mock.timers.tick(1);
 
-      assert.equal(synth.spoken.length, 2);
-      assert.equal(synth.last.text, "bastante larga.");
-      assert.equal(synth.last.rate, 1.2);
-    } finally {
-      mock.timers.reset();
-    }
+    assert.equal(synth.spoken.length, 2);
+    assert.equal(synth.last.text, "bastante larga.");
+    assert.equal(synth.last.rate, 1.2);
   });
 
-  test("a new speed while paused is used on resuming", () => {
-    mock.timers.enable({ apis: ["setTimeout"] });
-    try {
-      const { reading: r } = reading(synth, ["Uno."]);
-      r.togglePause();
+  test("a new speed while paused is used on resuming", (t) => {
+    t.mock.timers.enable({ apis: ["setTimeout"] });
+    const { reading: r } = reading(synth, ["Uno."]);
+    r.togglePause();
 
-      r.setRate(1.5);
-      mock.timers.tick(RATE_SETTLE_MS);
-      assert.equal(synth.spoken.length, 1);
-      r.togglePause();
+    r.setRate(1.5);
+    t.mock.timers.tick(RATE_SETTLE_MS);
+    assert.equal(synth.spoken.length, 1);
+    r.togglePause();
 
-      assert.equal(synth.last.rate, 1.5);
-    } finally {
-      mock.timers.reset();
-    }
+    assert.equal(synth.last.rate, 1.5);
   });
 
-  test("a failure is tried once more, then with a local voice", () => {
+  test("a failure is tried again after a moment, then with a local voice", (t) => {
+    t.mock.timers.enable({ apis: ["setTimeout"] });
     const { finished } = reading(synth, ["Una frase que falla."]);
     synth.word(4);
 
-    synth.fail();
-    assert.equal(synth.last.text, "frase que falla.");
-    assert.equal(synth.last.voice, ALVARO);
+    for (const delay of RETRY_DELAYS_MS) {
+      synth.fail();
+      t.mock.timers.tick(delay - 1);
+      assert.equal(synth.current, null);
+      t.mock.timers.tick(1);
+      assert.equal(synth.last.text, "frase que falla.");
+      assert.equal(synth.last.voice, ALVARO);
+    }
     synth.fail();
     assert.equal(synth.last.text, "frase que falla.");
     assert.equal(synth.last.voice, PABLO);
@@ -180,45 +179,63 @@ describe("Reading", () => {
     assert.deepEqual(finished, [null]);
   });
 
-  test("a voice that speaks again after a failure gets another retry", () => {
+  test("a voice that speaks again after a failure gets its retries back", (t) => {
+    t.mock.timers.enable({ apis: ["setTimeout"] });
     reading(synth, ["Uno dos tres."]);
 
     synth.fail();
+    t.mock.timers.tick(RETRY_DELAYS_MS[0]);
     synth.word(4);
     synth.fail();
+    t.mock.timers.tick(RETRY_DELAYS_MS[0]);
 
+    assert.equal(synth.spoken.length, 3);
     assert.equal(synth.last.voice, ALVARO);
   });
 
-  test("when no voice can go on, it finishes with the error", () => {
+  test("when no voice can go on, it finishes with the error", (t) => {
+    t.mock.timers.enable({ apis: ["setTimeout"] });
     synth.voices = [ALVARO];
     const { finished } = reading(synth, ["Uno.", "Dos."]);
 
-    synth.fail("network");
+    for (const delay of RETRY_DELAYS_MS) {
+      synth.fail("network");
+      t.mock.timers.tick(delay);
+    }
     synth.fail("network");
 
     assert.deepEqual(finished, ["network"]);
-    assert.equal(synth.spoken.length, 2);
+    assert.equal(synth.spoken.length, 1 + RETRY_DELAYS_MS.length);
   });
 
-  test("stop cuts the voice and finishes once", async () => {
-    mock.timers.enable({ apis: ["setTimeout"] });
-    try {
-      const { reading: r, finished } = reading(synth, ["Uno.", "Dos."]);
-      r.setRate(1.3);
+  test("a pause while a retry waits holds it until resuming", (t) => {
+    t.mock.timers.enable({ apis: ["setTimeout"] });
+    const { reading: r } = reading(synth, ["Uno. Dos tres."]);
+    synth.word(5);
+    synth.fail();
 
-      r.stop();
-      r.stop();
-      r.togglePause();
-      mock.timers.tick(RATE_SETTLE_MS);
-      await settle();
+    r.togglePause();
+    t.mock.timers.tick(RETRY_DELAYS_MS.at(-1));
+    assert.equal(synth.spoken.length, 1);
+    r.togglePause();
 
-      assert.equal(synth.current, null);
-      assert.equal(synth.spoken.length, 1);
-      assert.deepEqual(finished, [null]);
-    } finally {
-      mock.timers.reset();
-    }
+    assert.equal(synth.last.text, "Dos tres.");
+  });
+
+  test("stop cuts the voice and finishes once", async (t) => {
+    t.mock.timers.enable({ apis: ["setTimeout"] });
+    const { reading: r, finished } = reading(synth, ["Uno.", "Dos."]);
+    r.setRate(1.3);
+
+    r.stop();
+    r.stop();
+    r.togglePause();
+    t.mock.timers.tick(RATE_SETTLE_MS);
+    await settle();
+
+    assert.equal(synth.current, null);
+    assert.equal(synth.spoken.length, 1);
+    assert.deepEqual(finished, [null]);
   });
 });
 
@@ -250,19 +267,15 @@ describe("voices", () => {
     assert.equal(await picked, ALVARO);
   });
 
-  test("falls back to the next preferred voice in time", async () => {
-    mock.timers.enable({ apis: ["setTimeout"] });
-    try {
-      const synth = new FakeSynth();
-      synth.voices = [PABLO];
+  test("falls back to the next preferred voice in time", async (t) => {
+    t.mock.timers.enable({ apis: ["setTimeout"] });
+    const synth = new FakeSynth();
+    synth.voices = [PABLO];
 
-      const picked = pickVoice(synth, ["Álvaro", "Pablo"]);
-      mock.timers.tick(VOICE_WAIT_MS);
+    const picked = pickVoice(synth, ["Álvaro", "Pablo"]);
+    t.mock.timers.tick(VOICE_WAIT_MS);
 
-      assert.equal(await picked, PABLO);
-    } finally {
-      mock.timers.reset();
-    }
+    assert.equal(await picked, PABLO);
   });
 
   test("a local voice is the preferred one, or any of Spain, or any Spanish", () => {

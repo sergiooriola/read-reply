@@ -1,12 +1,13 @@
 # The reading window's place on the Windows desktop, and the focus handed back.
 #
-# 1. Prints, as one line of JSON, the work area of the monitor of the window in
-#    front (the terminal where the key was pressed), in physical pixels, and
-#    that monitor's scale.
+# 1. Prints, as one line of JSON, the terminal's window (the Windows Terminal
+#    window last in front, else the window in front) and the top-left corner
+#    of its monitor, in physical pixels, and that monitor's scale.
 # 2. Waits for a line on stdin, sent once Edge has started; end of input ends
 #    the script.
-# 3. Waits for an Edge window to come to the front, the reading window, and
-#    gives the focus back to the window that had it before.
+# 3. Waits for an Edge window to come to the front, the reading window, keeps
+#    it above the others, so that the terminal does not cover it, and gives
+#    the focus back to the window that had it before.
 param([double] $WaitSeconds = 10)
 
 $ErrorActionPreference = 'Stop'
@@ -31,6 +32,24 @@ public static class Desktop {
   [DllImport("user32.dll")] public static extern IntPtr MonitorFromWindow(IntPtr window, uint flags);
   [DllImport("user32.dll")] public static extern bool GetMonitorInfo(IntPtr monitor, ref MonitorInfo info);
   [DllImport("user32.dll")] public static extern uint GetDpiForWindow(IntPtr window);
+  [DllImport("user32.dll")] public static extern IntPtr GetTopWindow(IntPtr parent);
+  [DllImport("user32.dll")] public static extern IntPtr GetWindow(IntPtr window, uint command);
+  [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr window);
+  [DllImport("user32.dll")] public static extern bool IsIconic(IntPtr window);
+  [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+  public static extern int GetClassName(IntPtr window, System.Text.StringBuilder name, int length);
+  [DllImport("dwmapi.dll")] public static extern int DwmGetWindowAttribute(IntPtr window, int attribute, out Rect rect, int size);
+  [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr window, IntPtr after, int x, int y, int width, int height, uint flags);
+
+  // The Windows Terminal window highest in the Z order: the one last in front.
+  public static IntPtr Terminal() {
+    var name = new System.Text.StringBuilder(64);
+    for (var window = GetTopWindow(IntPtr.Zero); window != IntPtr.Zero; window = GetWindow(window, 2 /* GW_HWNDNEXT */)) {
+      GetClassName(window, name, name.Capacity);
+      if (name.ToString() == "CASCADIA_HOSTING_WINDOW_CLASS" && IsWindowVisible(window) && !IsIconic(window)) return window;
+    }
+    return IntPtr.Zero;
+  }
 }
 "@
 
@@ -38,14 +57,20 @@ public static class Desktop {
 [void][Desktop]::SetThreadDpiAwarenessContext([IntPtr](-4))
 
 $front = [Desktop]::GetForegroundWindow()
+$terminal = [Desktop]::Terminal()
+if ($terminal -eq [IntPtr]::Zero) { $terminal = $front }
+# The frame as drawn, without the invisible borders for resizing.
+$frame = New-Object Desktop+Rect
+$frameBounds = 9  # DWMWA_EXTENDED_FRAME_BOUNDS
+[void][Desktop]::DwmGetWindowAttribute($terminal, $frameBounds, [ref]$frame, 16)
 $info = New-Object Desktop+MonitorInfo
 $info.Size = [Runtime.InteropServices.Marshal]::SizeOf($info)
 $nearest = 2  # MONITOR_DEFAULTTONEAREST
-[void][Desktop]::GetMonitorInfo([Desktop]::MonitorFromWindow($front, $nearest), [ref]$info)
-$dpi = [Desktop]::GetDpiForWindow($front)
+[void][Desktop]::GetMonitorInfo([Desktop]::MonitorFromWindow($terminal, $nearest), [ref]$info)
+$dpi = [Desktop]::GetDpiForWindow($terminal)
 [Console]::Out.WriteLine((@{
-  left = $info.Work.Left; top = $info.Work.Top
-  right = $info.Work.Right; bottom = $info.Work.Bottom
+  left = $frame.Left; top = $frame.Top; right = $frame.Right
+  monitor_left = $info.Monitor.Left; monitor_top = $info.Monitor.Top
   scale = $(if ($dpi) { $dpi / 96.0 } else { 1.0 })
 } | ConvertTo-Json -Compress))
 [Console]::Out.Flush()
@@ -65,6 +90,9 @@ while ((Get-Date) -lt $deadline) {
   $window = [Desktop]::GetForegroundWindow()
   if ($window -ne [IntPtr]::Zero -and $window -ne $last) {
     if (Test-Edge $window) {
+      $topmost = [IntPtr](-1)  # HWND_TOPMOST
+      $keepPlaceAndFocus = 0x13  # SWP_NOSIZE | SWP_NOMOVE | SWP_NOACTIVATE
+      [void][Desktop]::SetWindowPos($window, $topmost, 0, 0, 0, 0, $keepPlaceAndFocus)
       # Windows lets a process give the focus away only while attached to the
       # input of the one that has it.
       $processId = 0

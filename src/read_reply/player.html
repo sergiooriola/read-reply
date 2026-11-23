@@ -137,10 +137,17 @@
     $("toggle").addEventListener("click", togglePause);
     $("previous").addEventListener("click", () => reading.skip(-1));
     $("next").addEventListener("click", () => reading.skip(1));
-    $("position").addEventListener("pointerdown", () => (dragging = true));
-    $("position").addEventListener("pointerup", () => (dragging = false));
+    // Held, the slider keeps the reading from ending. "change" comes after
+    // "pointerup", in the same task: the jump goes first, then the release.
+    const hold = (held) => {
+      dragging = held;
+      reading.hold(held);
+    };
+    $("position").addEventListener("pointerdown", () => hold(true));
+    for (const name of ["pointerup", "pointercancel"]) {
+      $("position").addEventListener(name, () => setTimeout(() => hold(false)));
+    }
     $("position").addEventListener("change", (event) => {
-      dragging = false;
       reading.seek(event.target.value / 1000);
     });
     $("slower").addEventListener("click", () => changeRate(-1));
@@ -149,8 +156,15 @@
     document.addEventListener("keydown", (event) => {
       const action = {
         " ": togglePause,
+        // The slider's own keys too, which would land in the same sentence.
         ArrowLeft: () => reading.skip(-1),
+        ArrowDown: () => reading.skip(-1),
+        PageDown: () => reading.skip(-1),
         ArrowRight: () => reading.skip(1),
+        ArrowUp: () => reading.skip(1),
+        PageUp: () => reading.skip(1),
+        Home: () => reading.seek(0),
+        End: () => reading.seek(1),
         "-": () => changeRate(-1),
         "+": () => changeRate(1),
         Escape: () => reading.stop(),

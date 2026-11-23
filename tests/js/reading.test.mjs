@@ -343,6 +343,33 @@ describe("Reading, going to another sentence", () => {
     assert.equal(synth.spoken.length, 3);
   });
 
+  test("held, the slider keeps the end from closing the reading", (t) => {
+    t.mock.timers.enable({ apis: ["setTimeout"] });
+    const { reading: r, finished } = reading(synth, CHUNKS);
+    r.hold(true);
+    synth.end();
+    synth.end();
+    assert.deepEqual(finished, []);
+
+    r.seek(0.5);
+    r.hold(false);
+    t.mock.timers.tick(SETTLE_MS);
+
+    assert.equal(synth.last.text, "Tres cuatro.");
+    assert.deepEqual(finished, []);
+  });
+
+  test("let go without a jump, the slider lets the reading end", () => {
+    const { reading: r, finished } = reading(synth, CHUNKS);
+    r.hold(true);
+    synth.end();
+    synth.end();
+
+    r.hold(false);
+
+    assert.deepEqual(finished, [null]);
+  });
+
   test("a jump while paused is where resuming starts", (t) => {
     t.mock.timers.enable({ apis: ["setTimeout"] });
     const { reading: r } = reading(synth, CHUNKS);
@@ -409,6 +436,10 @@ describe("Reading before it starts", () => {
 describe("sentenceStarts", () => {
   test("lists where each sentence starts, the first at 0", () => {
     assert.deepEqual(sentenceStarts("Uno. Dos: tres… cuatro"), [0, 5, 10, 16]);
+  });
+
+  test("closing quotes or brackets may come before the space", () => {
+    assert.deepEqual(sentenceStarts("«¡Hecho!» Ahora. (Ver abajo.) Fin"), [0, 10, 17, 30]);
   });
 
   test("an ending at the very end starts nothing", () => {

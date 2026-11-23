@@ -59,10 +59,10 @@ export function localVoice(synth, preferred) {
   );
 }
 
-// Where each sentence of the text starts. Sentences end as
-// speech_text.split_sentences cuts them.
+// Where each sentence of the text starts. A sentence ends at . ! ? … : or ;
+// and a space, with any closing quotes or brackets between them.
 export function sentenceStarts(text) {
-  const ends = [...text.matchAll(/[.!?…:;]\s+/g)];
+  const ends = [...text.matchAll(/[.!?…:;][»”’"')\]]*\s+/g)];
   const starts = ends.map((end) => end.index + end[0].length);
   return [0, ...starts.filter((start) => start < text.length)];
 }
@@ -92,6 +92,7 @@ export class Reading {
   #failures = 0; // in a row, without getting past where the last one was
   #failedAt = -1; // where in the chunk the last failure was
   #started = false; // the controls work before, while the voice loads
+  #held = false; // the slider is held: the end waits, it may go back
   #paused = false;
   #finished = false;
   #waiting = null; // a retry, or a new speed waiting for the clicks to stop
@@ -171,10 +172,18 @@ export class Reading {
   // Goes to the sentence before (-1) or after (1) the one in progress; after
   // the last one there is none.
   skip(direction) {
-    const at = this.#starts[this.#index] + this.#word;
+    const ended = this.#index >= this.#chunks.length; // the slider held at the end
+    const at = ended ? this.#total : this.#starts[this.#index] + this.#word;
     const current = this.#sentences.findLastIndex((start) => start <= at);
     const target = this.#sentences[Math.max(current + direction, 0)];
     if (target !== undefined) this.#jump(target);
+  }
+
+  // While the slider is held, the reading does not end: the listener may be
+  // about to go back.
+  hold(held) {
+    this.#held = held;
+    if (!held && this.#index >= this.#chunks.length) this.#finish(null);
   }
 
   stop() {
@@ -182,7 +191,10 @@ export class Reading {
   }
 
   #speak() {
-    if (this.#index >= this.#chunks.length) return this.#finish(null);
+    if (this.#index >= this.#chunks.length) {
+      if (!this.#held) this.#finish(null);
+      return;
+    }
     const offset = this.#offset;
     const utterance = new this.#Utterance(this.#chunks[this.#index].slice(offset));
     utterance.voice = this.voice;

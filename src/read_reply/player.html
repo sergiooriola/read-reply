@@ -98,6 +98,7 @@
     const { promise: finished, resolve: finish } = Promise.withResolvers();
     let dragging = false; // the slider follows the voice, but not under the pointer
     let holder = null; // the pointer holding the slider
+    let releasing = null; // the release, once "change" has had its turn
     // The controls and a stop work at once; it speaks once the voice is known.
     const reading = new Reading({
       synth: speechSynthesis,
@@ -141,12 +142,15 @@
     // Held, the slider keeps the reading from ending. "change" comes after
     // "pointerup", in the same task: the jump goes first, then the release.
     $("position").addEventListener("pointerdown", (event) => {
-      if (event.button !== 0 || holder !== null) return;
+      if (event.button !== 0 || (holder !== null && releasing === null)) return;
+      clearTimeout(releasing); // taken again before the last release
+      releasing = null;
       holder = event.pointerId;
       dragging = true;
       reading.hold(true);
     });
     const release = () => {
+      releasing = null;
       holder = null;
       dragging = false;
       reading.hold(false);
@@ -154,11 +158,11 @@
     // Let go anywhere: the pointer may leave the slider, or the window.
     for (const name of ["pointerup", "pointercancel"]) {
       addEventListener(name, (event) => {
-        if (event.pointerId === holder) setTimeout(release);
+        if (event.pointerId === holder) releasing ??= setTimeout(release);
       });
     }
     addEventListener("blur", () => {
-      if (holder !== null) setTimeout(release);
+      if (holder !== null) releasing ??= setTimeout(release);
     });
     $("position").addEventListener("change", (event) => {
       dragging = false; // the slider shows where the jump lands

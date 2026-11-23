@@ -173,9 +173,11 @@ export class Reading {
   // Goes to the sentence before (-1) or after (1) the one in progress; after
   // the last one there is none.
   skip(direction) {
-    const ended = this.#index >= this.#chunks.length; // the slider held at the end
-    const at = ended ? this.#total : this.#starts[this.#index] + this.#word;
-    const current = this.#sentences.findLastIndex((start) => start <= at);
+    const at = this.#starts[this.#index] + this.#word;
+    const current =
+      this.#index < this.#chunks.length
+        ? this.#sentences.findLastIndex((start) => start <= at)
+        : this.#sentences.length; // held at the end: back is the last one
     const target = this.#sentences[Math.max(current + direction, 0)];
     if (target !== undefined) this.#jump(target);
   }

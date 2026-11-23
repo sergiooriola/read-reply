@@ -359,6 +359,24 @@ describe("Reading, going to another sentence", () => {
     assert.deepEqual(finished, []);
   });
 
+  test("held at the end, back is the last sentence and on is none", (t) => {
+    t.mock.timers.enable({ apis: ["setTimeout"] });
+    const { reading: r, finished } = reading(synth, CHUNKS);
+    r.hold(true);
+    synth.end();
+    synth.end();
+
+    r.skip(1);
+    t.mock.timers.tick(SETTLE_MS);
+    assert.equal(synth.spoken.length, 2);
+    r.skip(-1);
+    r.hold(false);
+    t.mock.timers.tick(SETTLE_MS);
+
+    assert.equal(synth.last.text, "Cinco seis.");
+    assert.deepEqual(finished, []);
+  });
+
   test("a pause with the slider held at the end is ignored", () => {
     const { reading: r } = reading(synth, CHUNKS);
     r.hold(true);

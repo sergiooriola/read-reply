@@ -143,9 +143,14 @@
       dragging = held;
       reading.hold(held);
     };
-    $("position").addEventListener("pointerdown", () => hold(true));
-    for (const name of ["pointerup", "pointercancel"]) {
-      $("position").addEventListener(name, () => setTimeout(() => hold(false)));
+    $("position").addEventListener("pointerdown", (event) => {
+      if (event.button === 0) hold(true);
+    });
+    // Let go anywhere: the pointer may leave the slider, or the window.
+    for (const name of ["pointerup", "pointercancel", "blur"]) {
+      addEventListener(name, () => {
+        if (dragging) setTimeout(() => hold(false));
+      });
     }
     $("position").addEventListener("change", (event) => {
       reading.seek(event.target.value / 1000);

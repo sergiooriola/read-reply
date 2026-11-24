@@ -68,6 +68,7 @@ Con Mayús+F9, el texto no sale de la transcripción sino del portapapeles de Wi
 
 - Se quita la sangría común a todas las líneas, para que una selección que empieza en una sublista siga siendo una lista. El resto se conserva: distingue el segundo párrafo de un paso del paso siguiente, y un número que la ventana dejó al principio de una línea («2026.») de un paso numerado.
 - Las marcas que los agentes ponen delante de cada mensaje (● en Claude Code, • en Codex, que también lo usa en las viñetas) se convierten en guiones.
+- Una línea con forma de paso («2.») empieza un elemento nuevo si queda a la izquierda del texto de la línea anterior. Si queda justo debajo de ese texto, es un número que cortó la ventana y sigue la frase.
 - El analizador no reconoce ni HTML ni código: un `<panel>` o una línea con ```` ``` ```` se leen como texto.
 
 Deja tres cosas fuera del repositorio: un perfil propio de Edge en `%LOCALAPPDATA%\read-reply\edge-profile`, de unos 45 MB y aparte del tuyo; la velocidad elegida, en `~/.local/state/read-reply/rate` (o bajo `XDG_STATE_HOME`), y el bloqueo, en `$XDG_RUNTIME_DIR/read-reply/`.
@@ -85,7 +86,7 @@ Deja tres cosas fuera del repositorio: un perfil propio de Edge en `%LOCALAPPDAT
 
 - Antigravity (`agy`) no está soportado: guarda sus conversaciones en bloques binarios de SQLite.
 - Las rutas y el código dentro de una frase se leen tal cual.
-- En lo copiado del terminal no se distingue el código: se lee entero, en vez de anunciarse. Las tablas llegan dibujadas con líneas, no fila a fila.
+- En lo copiado del terminal no se distingue el código: se lee entero, en vez de anunciarse. Las tablas llegan dibujadas con líneas, no fila a fila. Si la selección empieza a mitad de un elemento, sus subelementos pueden leerse seguidos, en un solo fragmento, sin perder palabras.
 - Al continuar tras una pausa o cambiar la velocidad, Álvaro tarda hasta un segundo en volver a hablar, y se nota el corte: es una voz online.
 - Depende de que Edge siga ofreciendo sus voces online a las páginas web.
 - La ventana se coloca sobre Windows Terminal. Con otro terminal, se abre sobre la ventana que tengas delante.

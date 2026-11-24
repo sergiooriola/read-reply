@@ -244,8 +244,22 @@ def test_copied_text_is_never_taken_for_code(screen: str, spoken: list[str]) -> 
             "  1. El error está en el paso\n     2. Lo corregimos ahora.",
             ["El error está en el paso 2. Lo corregimos ahora."],
         ),
+        (
+            "Paso uno.\n\n     Su segundo párrafo.\n  2. Paso dos.",
+            ["Paso uno.", "Su segundo párrafo.", "Paso dos."],
+        ),
+        (
+            "o uno que sigue\n     aquí.\n  2. Paso dos.\n  3. Paso tres.",
+            ["o uno que sigue aquí.", "Paso dos.", "Paso tres."],
+        ),
     ],
-    ids=["steps", "number-cut-in-a-paragraph", "number-cut-in-an-item"],
+    ids=[
+        "steps",
+        "number-cut-in-a-paragraph",
+        "number-cut-in-an-item",
+        "selected-after-the-first-number",
+        "selected-from-the-middle-of-a-step",
+    ],
 )
 def test_copied_numbers_are_items_only_where_the_screen_says(
     screen: str, spoken: list[str]

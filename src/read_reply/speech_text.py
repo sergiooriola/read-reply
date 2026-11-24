@@ -31,6 +31,8 @@ ALERT_TITLES = {
 # What the agents put on screen before each message, and Codex before each
 # list item too: ● in Claude Code, • in Codex.
 SCREEN_MARK = re.compile(r"^([ \t]*)[●•] ", re.MULTILINE)
+# The start of a line that looks like a list item: indent, mark and spaces.
+SCREEN_ITEM = re.compile(r"[ \t]*(?:[-*+]|\d{1,9}[.)])[ \t]+")
 
 
 class SpeechParser(MarkdownIt):
@@ -82,7 +84,28 @@ def screen_chunks(text: str) -> list[str]:
     has in common: a selection that starts in a nested list still starts a
     list.
     """
-    return chunks_of(SCREEN_PARSER, SCREEN_MARK.sub(r"\1- ", textwrap.dedent(text)))
+    text = SCREEN_MARK.sub(r"\1- ", textwrap.dedent(text))
+    return chunks_of(SCREEN_PARSER, apart_items(text))
+
+
+def apart_items(text: str) -> str:
+    """The text with a blank line before each item left of the text above it.
+
+    A number the window cut before stays where that text starts, and goes on
+    with it. A step further left starts a new item, but Markdown would join
+    "2." to the paragraph above, as when the selection starts after "1.".
+    """
+    lines: list[str] = []
+    column = 0  # where the text of the last line that had any starts
+    for line in text.split("\n"):
+        if line.strip():
+            item = SCREEN_ITEM.match(line)
+            indent = len(line) - len(line.lstrip())
+            if item and indent < column:
+                lines.append("")
+            column = item.end() if item else indent
+        lines.append(line)
+    return "\n".join(lines)
 
 
 def chunks_of(parser: SpeechParser, text: str) -> list[str]:

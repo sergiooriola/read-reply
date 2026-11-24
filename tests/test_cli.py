@@ -38,6 +38,27 @@ def test_without_a_pane_it_explains_and_exits(monkeypatch: pytest.MonkeyPatch) -
     assert exit_info.value.code == 2
 
 
+def test_the_copied_text_needs_no_pane(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.delenv("HERDR_ACTIVE_PANE_ID", raising=False)
+    monkeypatch.setattr(cli, "clipboard_text", lambda: "● Uno.\n\n  - Dos")
+
+    cli.main(["--clipboard", "--print"])
+
+    assert capsys.readouterr().out == "Uno.\n\nDos\n"
+
+
+@pytest.mark.parametrize("copied", ["", "\n  \n"], ids=["nothing", "blank"])
+def test_nothing_copied_is_an_error(
+    monkeypatch: pytest.MonkeyPatch, copied: str
+) -> None:
+    monkeypatch.setattr(cli, "clipboard_text", lambda: copied)
+
+    with pytest.raises(UserError, match="No hay texto copiado"):
+        cli.clipboard_chunks()
+
+
 def test_errors_are_reported_and_exit_with_1(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -67,7 +88,7 @@ def test_a_press_during_a_reading_stops_it(tmp_path: Path) -> None:
     ):
         fcntl.flock(lock, fcntl.LOCK_EX)
 
-        cli.read_or_stop("w1:p1", tmp_path, tmp_path / "rate")
+        cli.read_or_stop(lambda: ["Hola."], tmp_path, tmp_path / "rate")
 
         assert reading.stop_requested
 
@@ -75,17 +96,16 @@ def test_a_press_during_a_reading_stops_it(tmp_path: Path) -> None:
 def test_a_stop_during_the_preparation_skips_speaking(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    def prepare_and_get_stopped(pane: str) -> list[str]:
+    def prepare_and_get_stopped() -> list[str]:
         request_stop(tmp_path)
         return ["Hola."]
 
     def must_not_play(self: Player, chunks: list[str]) -> None:
         raise AssertionError("it spoke after a stop")
 
-    monkeypatch.setattr(cli, "reply_chunks", prepare_and_get_stopped)
     monkeypatch.setattr(Player, "play", must_not_play)
 
-    cli.read_or_stop("w1:p1", tmp_path, tmp_path / "rate")
+    cli.read_or_stop(prepare_and_get_stopped, tmp_path, tmp_path / "rate")
 
 
 def test_a_reply_with_nothing_to_say_is_an_error(

@@ -1,4 +1,5 @@
-"""Markdown turned into paragraphs meant for the ear.
+"""Markdown turned into paragraphs meant for the ear, and text copied from the
+terminal too.
 
 markdown-it-py parses the Markdown as GitHub does; walking its syntax tree
 drops the marks, announces code blocks instead of spelling them out, reads
@@ -6,6 +7,7 @@ tables row by row and links by their text.
 """
 
 import re
+import textwrap
 from collections.abc import Iterator
 from contextlib import suppress
 from urllib.parse import urlsplit
@@ -26,20 +28,23 @@ ALERT_TITLES = {
     "WARNING": "Advertencia",
     "CAUTION": "Precaución",
 }
+# What the agents put on screen before each message, and Codex before each
+# list item too: ● in Claude Code, • in Codex.
+SCREEN_MARK = re.compile(r"^([ \t]*)[●•] ", re.MULTILINE)
 
 
 class SpeechParser(MarkdownIt):
     """GitHub Flavored Markdown, which is what the agents write, parsed to be read.
 
-    Raw HTML is parsed as such so that it can be left out instead of read. No
-    $math$: it would take the text between two prices in dollars,
+    With html, raw HTML is parsed as such so that it can be left out instead
+    of read. No $math$: it would take the text between two prices in dollars,
     "0,99 $ de 5 $", for a formula.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, *, html: bool) -> None:
         # CommonMark's nesting limit, 20, drops everything after a list ten
         # levels deep.
-        super().__init__("commonmark", {"html": True, "maxNesting": 100})
+        super().__init__("commonmark", {"html": html, "maxNesting": 100})
         self.use(gfm_plugin)
         # The notes stay where they are written, to be skipped: moving them to
         # the end, as a web page does, fails on a note in a quote in a note.
@@ -50,13 +55,31 @@ class SpeechParser(MarkdownIt):
         return True
 
 
-PARSER = SpeechParser()
+REPLY_PARSER = SpeechParser(html=True)
+SCREEN_PARSER = SpeechParser(html=False)
 
 
 def speech_chunks(markdown: str) -> list[str]:
     """The reply as the pieces of text to speak, in order."""
-    tree = SyntaxTreeNode(PARSER.parse(markdown))
-    paragraphs = [text for text in spoken_blocks(tree.children) if text]
+    return chunks_of(REPLY_PARSER, markdown)
+
+
+def screen_chunks(text: str) -> list[str]:
+    """Text copied from the terminal as the pieces of text to speak, in order.
+
+    The screen shows the reply already rendered, which is near enough to
+    Markdown: its lists keep their dashes and numbers, so each item is still a
+    piece of its own, and the lines cut at the window's width join again. The
+    agents' marks before a message or an item become dashes, and a <word> on
+    screen is text to read, not HTML. Without the indent common to every line,
+    a selection that starts in a nested list is not taken for code.
+    """
+    return chunks_of(SCREEN_PARSER, SCREEN_MARK.sub(r"\1- ", textwrap.dedent(text)))
+
+
+def chunks_of(parser: SpeechParser, text: str) -> list[str]:
+    tree = SyntaxTreeNode(parser.parse(text))
+    paragraphs = [block for block in spoken_blocks(tree.children) if block]
     return [chunk for paragraph in paragraphs for chunk in split_sentences(paragraph)]
 
 

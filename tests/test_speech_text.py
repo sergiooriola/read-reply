@@ -3,6 +3,7 @@ import pytest
 from read_reply.speech_text import (
     CODE_BLOCK_NOTICE,
     MAX_CHUNK_CHARS,
+    screen_chunks,
     speech_chunks,
     split_sentences,
 )
@@ -128,6 +129,72 @@ def test_dollar_signs_are_prices_not_formulas() -> None:
 
 def test_rules_and_empty_paragraphs_say_nothing() -> None:
     assert speech_chunks("Uno\n\n---\n\nDos") == ["Uno", "Dos"]
+
+
+# What the terminal shows, as copied from it.
+CLAUDE_SCREEN = """\
+● Hecho: la PR está fusionada. No tienes
+  que hacer nada.
+
+  - Fusión: squash sobre main, y he borrado
+    la rama.
+  - Instalación: con scripts/install.
+
+  Estado: terminado.
+"""
+CODEX_SCREEN = """\
+• Listo. Cambia dos cosas:
+
+  • La primera.
+      • Un detalle de la primera.
+  • La segunda.
+"""
+
+
+@pytest.mark.parametrize(
+    ("screen", "spoken"),
+    [
+        (
+            CLAUDE_SCREEN,
+            [
+                "Hecho: la PR está fusionada. No tienes que hacer nada.",
+                "Fusión: squash sobre main, y he borrado la rama.",
+                "Instalación: con scripts/install.",
+                "Estado: terminado.",
+            ],
+        ),
+        (
+            CODEX_SCREEN,
+            [
+                "Listo. Cambia dos cosas:",
+                "La primera.",
+                "Un detalle de la primera.",
+                "La segunda.",
+            ],
+        ),
+    ],
+    ids=["claude", "codex"],
+)
+def test_copied_text_is_read_by_paragraphs_and_items_without_marks(
+    screen: str, spoken: list[str]
+) -> None:
+    assert screen_chunks(screen) == spoken
+
+
+@pytest.mark.parametrize(
+    ("screen", "spoken"),
+    [
+        (
+            "Usa read-reply --pane <panel> --print.",
+            "Usa read-reply --pane <panel> --print.",
+        ),
+        ("    - Un detalle\n    - Otro detalle", "Un detalle"),
+        ("Uno • dos ● tres", "Uno • dos ● tres"),
+    ],
+    ids=["angle-brackets", "nested-start", "marks-inside-a-line"],
+)
+def test_copied_text_is_read_as_it_shows(screen: str, spoken: str) -> None:
+    assert screen_chunks(screen)[0] == spoken
 
 
 def test_long_paragraphs_are_cut_between_sentences() -> None:

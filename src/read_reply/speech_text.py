@@ -1,4 +1,5 @@
-"""Markdown turned into paragraphs meant for the ear.
+"""Markdown turned into paragraphs meant for the ear, and text copied from the
+terminal too.
 
 markdown-it-py parses the Markdown as GitHub does; walking its syntax tree
 drops the marks, announces code blocks instead of spelling them out, reads
@@ -6,6 +7,7 @@ tables row by row and links by their text.
 """
 
 import re
+import textwrap
 from collections.abc import Iterator
 from contextlib import suppress
 from urllib.parse import urlsplit
@@ -26,6 +28,15 @@ ALERT_TITLES = {
     "WARNING": "Advertencia",
     "CAUTION": "Precaución",
 }
+# What the agents put on screen before each message, and Codex before each
+# list item too: ● in Claude Code, • in Codex.
+SCREEN_MARK = re.compile(r"^([ \t]*)[●•] ", re.MULTILINE)
+# A line that starts like a numbered step. Dashes and "1." need no help:
+# Markdown lets them start a list under a paragraph, but no other number.
+SCREEN_STEP = re.compile(r" *\d{1,9}[.)][ \t]")
+# Markdown's tab stops.
+TAB_SIZE = 4
+SCREEN_INDENT = re.compile(r"^[ \t]+", re.MULTILINE)
 
 
 class SpeechParser(MarkdownIt):
@@ -34,29 +45,80 @@ class SpeechParser(MarkdownIt):
     Raw HTML is parsed as such so that it can be left out instead of read. No
     $math$: it would take the text between two prices in dollars,
     "0,99 $ de 5 $", for a formula.
+
+    For text copied from the screen, there is neither HTML nor code: a <panel>
+    or a ``` line on screen is text to read.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, *, screen: bool = False) -> None:
         # CommonMark's nesting limit, 20, drops everything after a list ten
         # levels deep.
-        super().__init__("commonmark", {"html": True, "maxNesting": 100})
+        super().__init__("commonmark", {"html": not screen, "maxNesting": 100})
         self.use(gfm_plugin)
         # The notes stay where they are written, to be skipped: moving them to
         # the end, as a web page does, fails on a note in a quote in a note.
         self.disable("footnote_tail")
+        if screen:
+            self.disable(["code", "fence"])
 
     def validateLink(self, url: str) -> bool:
         """Every link is valid here: none is rendered or followed, only read."""
         return True
 
 
-PARSER = SpeechParser()
+REPLY_PARSER = SpeechParser()
+SCREEN_PARSER = SpeechParser(screen=True)
 
 
 def speech_chunks(markdown: str) -> list[str]:
     """The reply as the pieces of text to speak, in order."""
-    tree = SyntaxTreeNode(PARSER.parse(markdown))
-    paragraphs = [text for text in spoken_blocks(tree.children) if text]
+    return chunks_of(REPLY_PARSER, markdown)
+
+
+def screen_chunks(text: str) -> list[str]:
+    """Text copied from the terminal as the pieces of text to speak, in order.
+
+    The screen shows the reply already rendered, which is near enough to
+    Markdown: its lists keep their dashes and numbers, so each item is still a
+    piece of its own, and the lines cut at the window's width join again. The
+    agents' marks before a message or an item become dashes.
+
+    The indent tells an item's next paragraph from the next item, or a number
+    the window cut before from a step, so it stays, but for what every line
+    has in common: a selection that starts in a nested list still starts a
+    list.
+    """
+    # Tabs in the indent as Markdown's stops of four, so that indents compare
+    # as they show. Others stay: "•\t2026." is a bullet, not a step in one.
+    text = SCREEN_INDENT.sub(lambda indent: indent[0].expandtabs(TAB_SIZE), text)
+    text = textwrap.dedent(text)
+    return chunks_of(SCREEN_PARSER, apart_items(SCREEN_MARK.sub(r"\1- ", text)))
+
+
+def apart_items(text: str) -> str:
+    """The text with a blank line before each step indented less than the line
+    above it.
+
+    A number the window cut before has the indent of the line above, and
+    goes on with it. A step less indented starts a new item, but Markdown
+    would join "2." to the paragraph above, as when the selection starts
+    after "1.".
+    """
+    lines: list[str] = []
+    above = 0  # the indent of the last line with text
+    for line in text.split("\n"):
+        if line.strip():
+            indent = len(line) - len(line.lstrip())
+            if indent < above and SCREEN_STEP.match(line):
+                lines.append("")
+            above = indent
+        lines.append(line)
+    return "\n".join(lines)
+
+
+def chunks_of(parser: SpeechParser, text: str) -> list[str]:
+    tree = SyntaxTreeNode(parser.parse(text))
+    paragraphs = [block for block in spoken_blocks(tree.children) if block]
     return [chunk for paragraph in paragraphs for chunk in split_sentences(paragraph)]
 
 

@@ -1,6 +1,6 @@
 # read-reply
 
-Lee en voz alta la última respuesta del agente de programación del panel activo de Herdr. Pulsas F9 y la oyes con Álvaro, la voz natural de Edge en español de España; vuelves a pulsar F9 y se calla. Mientras lee, una ventana pequeña sobre el terminal permite pausarla, saltar a otra frase, cambiar la velocidad y pararla. Nunca lee nada por su cuenta.
+Lee en voz alta la última respuesta del agente de programación del panel activo de Herdr. Pulsas F9 y la oyes con Álvaro, la voz natural de Edge en español de España; vuelves a pulsar F9 y se calla. Si solo te interesa una parte, la seleccionas con el ratón y pulsas Mayús+F9. Mientras lee, una ventana pequeña sobre el terminal permite pausarla, saltar a otra frase, cambiar la velocidad y pararla. Nunca lee nada por su cuenta.
 
 Funciona con Claude Code y Codex dentro de [Herdr](https://herdr.dev), en WSL sobre Windows.
 
@@ -18,7 +18,7 @@ git clone https://github.com/sergiooriola/read-reply ~/dev/read-reply
 ~/dev/read-reply/scripts/install
 ```
 
-`scripts/install` lo instala con `uv tool install` y las versiones exactas de `uv.lock`, que `uv tool install` por sí solo no lee. El comando `read-reply` queda en `~/.local/bin`. Después, el atajo en `~/.config/herdr/config.toml`:
+`scripts/install` lo instala con `uv tool install` y las versiones exactas de `uv.lock`, que `uv tool install` por sí solo no lee. El comando `read-reply` queda en `~/.local/bin`. Después, los atajos en `~/.config/herdr/config.toml`:
 
 ```toml
 [[keys.command]]
@@ -26,6 +26,12 @@ key = "f9"
 type = "shell"
 command = "read-reply"
 description = "Leer en voz alta la última respuesta del agente (otra vez: parar)"
+
+[[keys.command]]
+key = "shift+f9"
+type = "shell"
+command = "read-reply --clipboard"
+description = "Leer en voz alta lo seleccionado o copiado (otra vez: parar)"
 ```
 
 y `herdr server reload-config` para cargarlo. Los errores salen como notificaciones de Herdr, que de serie están desactivadas: activa `[ui.toast] delivery = "herdr"` para verlas dentro de Herdr, o `"system"` para verlas como notificaciones de Windows. Para instalar una versión nueva del código, `scripts/install` otra vez.
@@ -33,7 +39,8 @@ y `herdr server reload-config` para cargarlo. Los errores salen como notificacio
 ## Uso
 
 - **F9** lee la última respuesta terminada del agente del panel activo. Si el agente está trabajando, lee la anterior.
-- **F9 otra vez**, mientras lee, la corta.
+- **Mayús+F9** lee solo lo que hayas seleccionado con el ratón en el terminal. Herdr lo copia al soltar el botón, y Mayús+F9 lee lo copiado, así que también sirve para un texto copiado en cualquier otro programa de Windows. Herdr copia a través de Windows Terminal, que lo permite de serie; si en tu perfil está desactivado `compatibility.allowOSC52`, leería la copia anterior: copia tú el texto antes de pulsar.
+- **F9 o Mayús+F9 otra vez**, mientras lee, la corta.
 - **La ventana**, arriba en el centro del terminal y por encima de las demás mientras lee, no se queda con el foco: sigues escribiendo donde estabas. Con un clic en ella:
   - **Pausa y continuar** (o espacio). Al continuar, vuelve al principio de la frase.
   - **⏮ y ⏭** (o ← y →) van a la frase anterior y a la siguiente.
@@ -43,7 +50,7 @@ y `herdr server reload-config` para cargarlo. Los errores salen como notificacio
 
   ![La ventana de lectura: frase anterior, pausa, frase siguiente, velocidad y parar, con el deslizador debajo](docs/controller.png)
 - Los errores, como un panel sin agente, salen como notificación de Herdr, que llega a Windows si Herdr tiene `[ui.toast] delivery = "system"`.
-- `read-reply --pane w1:p2 --print` escribe el texto tal como lo leería, sin leerlo. Sirve para revisar cómo queda una respuesta.
+- `read-reply --pane w1:p2 --print` escribe el texto tal como lo leería, sin leerlo. Sirve para revisar cómo queda una respuesta. `read-reply --clipboard --print` hace lo mismo con lo copiado.
 
 ## Cómo funciona
 
@@ -57,6 +64,13 @@ y `herdr server reload-config` para cargarlo. Los errores salen como notificacio
 6. Mientras se prepara el texto, un script de PowerShell busca la ventana de Windows Terminal. Cuando se abre la de lectura, que reconoce por su perfil de Edge, la coloca arriba en el centro del terminal, por encima de las demás, y devuelve el foco a la ventana que lo tenía (`desktop.py`, `desktop.ps1`).
 7. Una segunda pulsación encuentra ocupado el bloqueo de la lectura en curso y le pide que pare (`cli.py`).
 
+Con Mayús+F9, el texto no sale de la transcripción sino del portapapeles de Windows, que lee `Get-Clipboard` en PowerShell (`windows.py`). Lo copiado del terminal es la respuesta ya dibujada, sin el Markdown, pero se parece lo bastante: las listas conservan sus guiones y números, y las líneas cortadas al ancho de la ventana se vuelven a unir. Así que pasa por el mismo analizador, preparado antes (`screen_chunks` en `speech_text.py`):
+
+- Se quita la sangría común a todas las líneas, para que una selección que empieza en una sublista siga siendo una lista. El resto se conserva: distingue el segundo párrafo de un paso del paso siguiente, y un número que la ventana dejó al principio de una línea («2026.») de un paso numerado.
+- Las marcas que los agentes ponen delante de cada mensaje (● en Claude Code, • en Codex, que también lo usa en las viñetas) se convierten en guiones.
+- Una línea que empieza como un paso («2.») empieza un elemento nuevo si tiene menos sangría que la anterior. Con la misma sangría, es un número que cortó la ventana («octubre de / 2026.») y sigue la frase.
+- El analizador no reconoce ni HTML ni código: un `<panel>` o una línea con ```` ``` ```` se leen como texto.
+
 Deja tres cosas fuera del repositorio: un perfil propio de Edge en `%LOCALAPPDATA%\read-reply\edge-profile`, de unos 45 MB y aparte del tuyo; la velocidad elegida, en `~/.local/state/read-reply/rate` (o bajo `XDG_STATE_HOME`), y el bloqueo, en `$XDG_RUNTIME_DIR/read-reply/`.
 
 ### Por qué así
@@ -65,12 +79,14 @@ Deja tres cosas fuera del repositorio: un perfil propio de Edge en `%LOCALAPPDAT
 - **La ventana, de Edge:** es la misma página que lee, así que no hace falta ninguna dependencia nueva. Un panel emergente de Herdr taparía el del agente y se quedaría con el teclado.
 - **Pausar cortando:** `speechSynthesis.pause()` no hace nada con Álvaro: sigue hablando (medido en #7). Cortar y retomar sí funciona, a cambio de menos de un segundo de silencio antes de seguir.
 - **markdown-it-py:** un analizador de Markdown de verdad, en vez de expresiones regulares. Su plugin `gfm` (de [mdit-py-plugins](https://github.com/executablebooks/mdit-py-plugins), del mismo equipo) entiende el Markdown de GitHub, que es el que escriben los agentes. Se instala con el paquete y `scripts/install` toma su versión de `uv.lock`: antes era pandoc, un programa aparte cuya versión dependía de cada máquina.
+- **El portapapeles, y no la selección de Herdr:** Herdr solo pasa la selección a las acciones de sus plugins, no a un atajo `shell`. Además, con `copy_on_select`, que viene activado, la copia al portapapeles y la borra en cuanto sueltas el ratón (comprobado en el código de Herdr 0.9.5). Para leerla directamente habría que desactivar `copy_on_select` y copiar con Ctrl+C, que sin una selección visible interrumpe al agente. El portapapeles sirve tal como seleccionas hoy.
 - **Ninguna dependencia más:** el resto es la biblioteca estándar de Python.
 
 ## Límites
 
 - Antigravity (`agy`) no está soportado: guarda sus conversaciones en bloques binarios de SQLite.
 - Las rutas y el código dentro de una frase se leen tal cual.
+- En lo copiado del terminal no se distingue el código: se lee entero, en vez de anunciarse. Las tablas llegan dibujadas con líneas, no fila a fila. Si la selección empieza a mitad de un elemento, sus subelementos pueden leerse seguidos, en un solo fragmento, sin perder palabras.
 - Al continuar tras una pausa o cambiar la velocidad, Álvaro tarda hasta un segundo en volver a hablar, y se nota el corte: es una voz online.
 - Depende de que Edge siga ofreciendo sus voces online a las páginas web.
 - La ventana se coloca sobre Windows Terminal. Con otro terminal, se abre sobre la ventana que tengas delante.

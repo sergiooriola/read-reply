@@ -3,6 +3,7 @@ import pytest
 from read_reply.speech_text import (
     CODE_BLOCK_NOTICE,
     MAX_CHUNK_CHARS,
+    screen_chunks,
     speech_chunks,
     split_sentences,
 )
@@ -128,6 +129,161 @@ def test_dollar_signs_are_prices_not_formulas() -> None:
 
 def test_rules_and_empty_paragraphs_say_nothing() -> None:
     assert speech_chunks("Uno\n\n---\n\nDos") == ["Uno", "Dos"]
+
+
+# What the terminal shows, as copied from it.
+CLAUDE_SCREEN = """\
+● Hecho: la PR está fusionada. No tienes
+  que hacer nada.
+
+  - Fusión: squash sobre main, y he borrado
+    la rama.
+  - Instalación: con scripts/install.
+
+  Estado: terminado.
+"""
+CODEX_SCREEN = """\
+• Listo. Cambia dos cosas:
+
+  • La primera.
+      • Un detalle de la primera.
+  • La segunda.
+"""
+
+
+@pytest.mark.parametrize(
+    ("screen", "spoken"),
+    [
+        (
+            CLAUDE_SCREEN,
+            [
+                "Hecho: la PR está fusionada. No tienes que hacer nada.",
+                "Fusión: squash sobre main, y he borrado la rama.",
+                "Instalación: con scripts/install.",
+                "Estado: terminado.",
+            ],
+        ),
+        (
+            CODEX_SCREEN,
+            [
+                "Listo. Cambia dos cosas:",
+                "La primera.",
+                "Un detalle de la primera.",
+                "La segunda.",
+            ],
+        ),
+    ],
+    ids=["claude", "codex"],
+)
+def test_copied_text_is_read_by_paragraphs_and_items_without_marks(
+    screen: str, spoken: list[str]
+) -> None:
+    assert screen_chunks(screen) == spoken
+
+
+@pytest.mark.parametrize(
+    ("screen", "spoken"),
+    [
+        (
+            "Usa read-reply --pane <panel> --print.",
+            "Usa read-reply --pane <panel> --print.",
+        ),
+        ("Uno • dos ● tres", "Uno • dos ● tres"),
+    ],
+    ids=["angle-brackets", "marks-inside-a-line"],
+)
+def test_copied_text_is_read_as_it_shows(screen: str, spoken: str) -> None:
+    assert screen_chunks(screen) == [spoken]
+
+
+@pytest.mark.parametrize(
+    ("screen", "spoken"),
+    [
+        ("    - Un detalle\n    - Otro detalle", ["Un detalle", "Otro detalle"]),
+        (
+            "Primer párrafo.\n\n    Segundo párrafo.",
+            ["Primer párrafo.", "Segundo párrafo."],
+        ),
+        (
+            "● Ejecuta esto:\n\n      uv sync\n      scripts/check",
+            ["Ejecuta esto:", "uv sync scripts/check"],
+        ),
+        (
+            "● Añade esto:\n\n      ```bash\n      uv sync\n      ```",
+            ["Añade esto:", "bash uv sync"],
+        ),
+        (
+            "uv sync\n    ```\n\nDespués ejecuta scripts/check.",
+            ["uv sync ```", "Después ejecuta scripts/check."],
+        ),
+    ],
+    ids=[
+        "nested-start",
+        "selected-from-the-first-letter",
+        "code",
+        "fence",
+        "open-fence",
+    ],
+)
+def test_copied_text_is_never_taken_for_code(screen: str, spoken: list[str]) -> None:
+    assert screen_chunks(screen) == spoken
+
+
+@pytest.mark.parametrize(
+    ("screen", "spoken"),
+    [
+        (
+            "  1. Paso uno.\n\n     Su segundo párrafo.\n  2. Paso dos.",
+            ["Paso uno.", "Su segundo párrafo.", "Paso dos."],
+        ),
+        (
+            "● Microsoft lo rompió en octubre de\n  2026. Desde entonces, Edge.",
+            ["Microsoft lo rompió en octubre de 2026. Desde entonces, Edge."],
+        ),
+        (
+            "  1. El error está en el paso\n     2. Lo corregimos ahora.",
+            ["El error está en el paso 2. Lo corregimos ahora."],
+        ),
+        (
+            "Paso uno.\n\n     Su segundo párrafo.\n  2. Paso dos.",
+            ["Paso uno.", "Su segundo párrafo.", "Paso dos."],
+        ),
+        (
+            "o uno que sigue\n     aquí.\n  2. Paso dos.\n  3. Paso tres.",
+            ["o uno que sigue aquí.", "Paso dos.", "Paso tres."],
+        ),
+        (
+            "  Se firmó en\n  2026. La prórroga, en\n  2027. Luego se amplió.",
+            ["Se firmó en 2026. La prórroga, en 2027. Luego se amplió."],
+        ),
+        (
+            "10. Terminó en\n\t2026. Después subieron.",
+            ["Terminó en 2026. Después subieron."],
+        ),
+        (
+            "  \tEn octubre de\n    2026. Se actualizó.",
+            ["En octubre de 2026. Se actualizó."],
+        ),
+        ("Saldo:\n    + 15 euros\n    - 3 euros", ["Saldo: + 15 euros - 3 euros"]),
+        ("•\t2026. Primer año del plan.", ["• 2026. Primer año del plan."]),
+    ],
+    ids=[
+        "steps",
+        "number-cut-in-a-paragraph",
+        "number-cut-in-an-item",
+        "selected-after-the-first-number",
+        "selected-from-the-middle-of-a-step",
+        "two-numbers-cut",
+        "number-cut-after-a-tab",
+        "tab-and-spaces",
+        "signs",
+        "tab-after-a-mark",
+    ],
+)
+def test_copied_numbers_are_items_only_where_the_screen_says(
+    screen: str, spoken: list[str]
+) -> None:
+    assert screen_chunks(screen) == spoken
 
 
 def test_long_paragraphs_are_cut_between_sentences() -> None:

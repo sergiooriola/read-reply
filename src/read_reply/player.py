@@ -21,15 +21,9 @@ from typing import Any, Protocol, Self
 from urllib.parse import urlsplit
 from urllib.request import ProxyHandler, Request, build_opener
 
-from read_reply.desktop import (
-    WINDOW_SIZE,
-    WINDOWS_CWD,
-    Desktop,
-    Terminal,
-    powershell_command,
-    window_position,
-)
+from read_reply.desktop import WINDOW_SIZE, Desktop, Terminal, window_position
 from read_reply.errors import UserError
+from read_reply.windows import WINDOWS_CWD, powershell_command
 
 EDGE = Path("/mnt/c/Program Files (x86)/Microsoft/Edge/Application/msedge.exe")
 # The first voice that Edge offers wins. Álvaro needs internet; the page falls

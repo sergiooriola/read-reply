@@ -3,6 +3,7 @@ Windows: see the README."""
 
 import json
 import time
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -37,13 +38,6 @@ def test_the_script_puts_the_window_in_physical_pixels() -> None:
     assert window_pixels(terminal) == (2965, 112)
 
 
-def fake_powershell(monkeypatch: pytest.MonkeyPatch, script: Path, body: str) -> None:
-    script.write_text("#!/bin/sh\n" + body)
-    script.chmod(0o755)
-    monkeypatch.setattr(desktop, "POWERSHELL", str(script))
-    monkeypatch.setattr(desktop, "WINDOWS_CWD", str(script.parent))  # not on WSL
-
-
 TERMINAL = {
     "left": 0,
     "top": 0,
@@ -55,15 +49,11 @@ TERMINAL = {
 
 
 def test_the_script_tells_the_terminal_and_hears_when_edge_starts(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, fake_powershell: Callable[[str], None]
 ) -> None:
     received = tmp_path / "received"
     answer = f"echo '{json.dumps(TERMINAL)}'\n"
-    fake_powershell(
-        monkeypatch,
-        tmp_path / "ps",
-        answer + f'read -r line\nprintf "%s\\n" "$line" > {received}\n',
-    )
+    fake_powershell(answer + f'read -r line\nprintf "%s\\n" "$line" > {received}\n')
 
     with Desktop() as script:
         terminal = script.terminal()
@@ -91,23 +81,19 @@ def test_without_powershell_the_reading_goes_on() -> None:
     ids=["error", "no-terminal", "no-frame", "no-scale"],
 )
 def test_an_answer_that_is_not_a_terminal_is_ignored(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, answer: str
+    fake_powershell: Callable[[str], None], answer: str
 ) -> None:
-    fake_powershell(monkeypatch, tmp_path / "ps", f"echo '{answer}'\n")
+    fake_powershell(f"echo '{answer}'\n")
 
     with Desktop() as script:
         assert script.terminal() is None
 
 
 def test_no_terminal_is_an_answer_too(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, fake_powershell: Callable[[str], None]
 ) -> None:
     received = tmp_path / "received"
-    fake_powershell(
-        monkeypatch,
-        tmp_path / "ps",
-        f'echo null\nread -r line\nprintf "%s\\n" "$line" > {received}\n',
-    )
+    fake_powershell(f'echo null\nread -r line\nprintf "%s\\n" "$line" > {received}\n')
     start = time.monotonic()
 
     with Desktop() as script:
@@ -119,9 +105,9 @@ def test_no_terminal_is_an_answer_too(
 
 
 def test_a_script_that_hangs_is_waited_for_briefly_then_ended(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    monkeypatch: pytest.MonkeyPatch, fake_powershell: Callable[[str], None]
 ) -> None:
-    fake_powershell(monkeypatch, tmp_path / "ps", "trap '' TERM\nexec sleep 30\n")
+    fake_powershell("trap '' TERM\nexec sleep 30\n")
     monkeypatch.setattr(desktop, "MONITOR_TIMEOUT_S", 0.2)
     start = time.monotonic()
 

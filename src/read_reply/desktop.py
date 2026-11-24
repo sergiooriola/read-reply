@@ -6,7 +6,6 @@ keyboard away. Only Windows knows its windows, so a PowerShell script
 (desktop.ps1) does both.
 """
 
-import base64
 import json
 import select
 import subprocess
@@ -16,19 +15,12 @@ from importlib.resources import files
 from types import TracebackType
 from typing import Self
 
-POWERSHELL = "powershell.exe"
-# Windows programs started from WSL need a Windows working directory.
-WINDOWS_CWD = "/mnt/c"
+from read_reply import windows
+
 # The window's size, in CSS pixels: player.html is laid out for it.
 WINDOW_SIZE = (340, 110)
 MARGIN = 8
 MONITOR_TIMEOUT_S = 3.0
-
-
-def powershell_command(script: str) -> list[str]:
-    """The command that runs the script, passed whole: no quoting, no files."""
-    encoded = base64.b64encode(script.encode("utf-16-le")).decode()
-    return [POWERSHELL, "-NoProfile", "-NonInteractive", "-EncodedCommand", encoded]
 
 
 @dataclass(frozen=True)
@@ -86,12 +78,12 @@ class Desktop:
         script = files("read_reply").joinpath("desktop.ps1").read_text()
         with suppress(OSError):  # not on Windows
             self._script = subprocess.Popen(
-                powershell_command(script),
+                windows.powershell_command(script),
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.DEVNULL,
                 text=True,
-                cwd=WINDOWS_CWD,
+                cwd=windows.WINDOWS_CWD,
             )
         return self
 

@@ -66,9 +66,8 @@ y `herdr server reload-config` para cargarlo. Los errores salen como notificacio
 
 Con Mayús+F9, el texto no sale de la transcripción sino del portapapeles de Windows, que lee `Get-Clipboard` en PowerShell (`windows.py`). Lo copiado del terminal es la respuesta ya dibujada, sin el Markdown, pero se parece lo bastante: las listas conservan sus guiones y números, y las líneas cortadas al ancho de la ventana se vuelven a unir. Así que pasa por el mismo analizador, preparado antes (`screen_chunks` en `speech_text.py`):
 
-- Se quita la sangría, que en pantalla es solo maquetación.
+- Se quita la sangría común a todas las líneas, para que una selección que empieza en una sublista siga siendo una lista. El resto se conserva: distingue el segundo párrafo de un paso del paso siguiente, y un número que la ventana dejó al principio de una línea («2026.») de un paso numerado.
 - Las marcas que los agentes ponen delante de cada mensaje (● en Claude Code, • en Codex, que también lo usa en las viñetas) se convierten en guiones.
-- Cada elemento de lista empieza un bloque propio.
 - El analizador no reconoce ni HTML ni código: un `<panel>` o una línea con ```` ``` ```` se leen como texto.
 
 Deja tres cosas fuera del repositorio: un perfil propio de Edge en `%LOCALAPPDATA%\read-reply\edge-profile`, de unos 45 MB y aparte del tuyo; la velocidad elegida, en `~/.local/state/read-reply/rate` (o bajo `XDG_STATE_HOME`), y el bloqueo, en `$XDG_RUNTIME_DIR/read-reply/`.

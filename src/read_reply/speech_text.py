@@ -7,6 +7,7 @@ tables row by row and links by their text.
 """
 
 import re
+import textwrap
 from collections.abc import Iterator
 from contextlib import suppress
 from urllib.parse import urlsplit
@@ -27,15 +28,9 @@ ALERT_TITLES = {
     "WARNING": "Advertencia",
     "CAUTION": "Precaución",
 }
-# On screen, the indent of a line is layout: a nested item four spaces in
-# would not be an item for Markdown.
-SCREEN_INDENT = re.compile(r"^[ \t]+", re.MULTILINE)
 # What the agents put on screen before each message, and Codex before each
 # list item too: ● in Claude Code, • in Codex.
-SCREEN_MARK = re.compile(r"^[●•] ", re.MULTILINE)
-# A list item. Markdown would join "2." to a paragraph right above it, such as
-# the second one of item 1, which on screen has lost its indent.
-SCREEN_ITEM = re.compile(r"^(?=(?:[-*+]|\d{1,9}[.)])[ \t])", re.MULTILINE)
+SCREEN_MARK = re.compile(r"^([ \t]*)[●•] ", re.MULTILINE)
 
 
 class SpeechParser(MarkdownIt):
@@ -80,11 +75,14 @@ def screen_chunks(text: str) -> list[str]:
     The screen shows the reply already rendered, which is near enough to
     Markdown: its lists keep their dashes and numbers, so each item is still a
     piece of its own, and the lines cut at the window's width join again. The
-    indent goes, the agents' marks before a message or an item become dashes,
-    and each item starts a block of its own.
+    agents' marks before a message or an item become dashes.
+
+    The indent tells an item's next paragraph from the next item, or a number
+    the window cut before from a step, so it stays, but for what every line
+    has in common: a selection that starts in a nested list still starts a
+    list.
     """
-    text = SCREEN_MARK.sub("- ", SCREEN_INDENT.sub("", text))
-    return chunks_of(SCREEN_PARSER, SCREEN_ITEM.sub("\n", text))
+    return chunks_of(SCREEN_PARSER, SCREEN_MARK.sub(r"\1- ", textwrap.dedent(text)))
 
 
 def chunks_of(parser: SpeechParser, text: str) -> list[str]:

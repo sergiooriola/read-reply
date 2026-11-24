@@ -229,10 +229,28 @@ def test_copied_text_is_never_taken_for_code(screen: str, spoken: list[str]) -> 
     assert screen_chunks(screen) == spoken
 
 
-def test_copied_steps_stay_apart() -> None:
-    screen = "  1. Paso uno.\n\n     Su segundo párrafo.\n  2. Paso dos."
-
-    assert screen_chunks(screen) == ["Paso uno.", "Su segundo párrafo.", "Paso dos."]
+@pytest.mark.parametrize(
+    ("screen", "spoken"),
+    [
+        (
+            "  1. Paso uno.\n\n     Su segundo párrafo.\n  2. Paso dos.",
+            ["Paso uno.", "Su segundo párrafo.", "Paso dos."],
+        ),
+        (
+            "● Microsoft lo rompió en octubre de\n  2026. Desde entonces, Edge.",
+            ["Microsoft lo rompió en octubre de 2026. Desde entonces, Edge."],
+        ),
+        (
+            "  1. El error está en el paso\n     2. Lo corregimos ahora.",
+            ["El error está en el paso 2. Lo corregimos ahora."],
+        ),
+    ],
+    ids=["steps", "number-cut-in-a-paragraph", "number-cut-in-an-item"],
+)
+def test_copied_numbers_are_items_only_where_the_screen_says(
+    screen: str, spoken: list[str]
+) -> None:
+    assert screen_chunks(screen) == spoken
 
 
 def test_long_paragraphs_are_cut_between_sentences() -> None:

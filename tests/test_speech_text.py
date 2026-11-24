@@ -252,6 +252,15 @@ def test_copied_text_is_never_taken_for_code(screen: str, spoken: list[str]) -> 
             "o uno que sigue\n     aquí.\n  2. Paso dos.\n  3. Paso tres.",
             ["o uno que sigue aquí.", "Paso dos.", "Paso tres."],
         ),
+        (
+            "  Se firmó en\n  2026. La prórroga, en\n  2027. Luego se amplió.",
+            ["Se firmó en 2026. La prórroga, en 2027. Luego se amplió."],
+        ),
+        (
+            "10. Terminó en\n\t2026. Después subieron.",
+            ["Terminó en 2026. Después subieron."],
+        ),
+        ("Saldo:\n    + 15 euros\n    - 3 euros", ["Saldo: + 15 euros - 3 euros"]),
     ],
     ids=[
         "steps",
@@ -259,6 +268,9 @@ def test_copied_text_is_never_taken_for_code(screen: str, spoken: list[str]) -> 
         "number-cut-in-an-item",
         "selected-after-the-first-number",
         "selected-from-the-middle-of-a-step",
+        "two-numbers-cut",
+        "number-cut-after-a-tab",
+        "signs",
     ],
 )
 def test_copied_numbers_are_items_only_where_the_screen_says(

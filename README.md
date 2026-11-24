@@ -68,7 +68,7 @@ Con Mayús+F9, el texto no sale de la transcripción sino del portapapeles de Wi
 
 - Se quita la sangría común a todas las líneas, para que una selección que empieza en una sublista siga siendo una lista. El resto se conserva: distingue el segundo párrafo de un paso del paso siguiente, y un número que la ventana dejó al principio de una línea («2026.») de un paso numerado.
 - Las marcas que los agentes ponen delante de cada mensaje (● en Claude Code, • en Codex, que también lo usa en las viñetas) se convierten en guiones.
-- Una línea con forma de paso («2.») empieza un elemento nuevo si queda a la izquierda del texto de la línea anterior. Si queda justo debajo de ese texto, es un número que cortó la ventana y sigue la frase.
+- Una línea que empieza como un paso («2.») empieza un elemento nuevo si tiene menos sangría que la anterior. Con la misma sangría, es un número que cortó la ventana («octubre de / 2026.») y sigue la frase.
 - El analizador no reconoce ni HTML ni código: un `<panel>` o una línea con ```` ``` ```` se leen como texto.
 
 Deja tres cosas fuera del repositorio: un perfil propio de Edge en `%LOCALAPPDATA%\read-reply\edge-profile`, de unos 45 MB y aparte del tuyo; la velocidad elegida, en `~/.local/state/read-reply/rate` (o bajo `XDG_STATE_HOME`), y el bloqueo, en `$XDG_RUNTIME_DIR/read-reply/`.

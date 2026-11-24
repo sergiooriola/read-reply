@@ -31,8 +31,11 @@ ALERT_TITLES = {
 # What the agents put on screen before each message, and Codex before each
 # list item too: ● in Claude Code, • in Codex.
 SCREEN_MARK = re.compile(r"^([ \t]*)[●•] ", re.MULTILINE)
-# The start of a line that looks like a list item: indent, mark and spaces.
-SCREEN_ITEM = re.compile(r"[ \t]*(?:[-*+]|\d{1,9}[.)])[ \t]+")
+# A line that starts like a numbered step. Dashes and "1." need no help:
+# Markdown lets them start a list under a paragraph, but no other number.
+SCREEN_STEP = re.compile(r"[ \t]*\d{1,9}[.)][ \t]")
+# Markdown's tab stops.
+TAB_SIZE = 4
 
 
 class SpeechParser(MarkdownIt):
@@ -89,21 +92,23 @@ def screen_chunks(text: str) -> list[str]:
 
 
 def apart_items(text: str) -> str:
-    """The text with a blank line before each item left of the text above it.
+    """The text with a blank line before each step indented less than the line
+    above it.
 
-    A number the window cut before stays where that text starts, and goes on
-    with it. A step further left starts a new item, but Markdown would join
-    "2." to the paragraph above, as when the selection starts after "1.".
+    A number the window cut before has the indent of the line above, and
+    goes on with it. A step less indented starts a new item, but Markdown
+    would join "2." to the paragraph above, as when the selection starts
+    after "1.".
     """
     lines: list[str] = []
-    column = 0  # where the text of the last line that had any starts
+    above = 0  # the indent of the last line with text
     for line in text.split("\n"):
         if line.strip():
-            item = SCREEN_ITEM.match(line)
-            indent = len(line) - len(line.lstrip())
-            if item and indent < column:
+            spaces = line.expandtabs(TAB_SIZE)
+            indent = len(spaces) - len(spaces.lstrip())
+            if indent < above and SCREEN_STEP.match(line):
                 lines.append("")
-            column = item.end() if item else indent
+            above = indent
         lines.append(line)
     return "\n".join(lines)
 

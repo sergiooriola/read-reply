@@ -260,6 +260,10 @@ def test_copied_text_is_never_taken_for_code(screen: str, spoken: list[str]) -> 
             "10. Terminó en\n\t2026. Después subieron.",
             ["Terminó en 2026. Después subieron."],
         ),
+        (
+            "  \tEn octubre de\n    2026. Se actualizó.",
+            ["En octubre de 2026. Se actualizó."],
+        ),
         ("Saldo:\n    + 15 euros\n    - 3 euros", ["Saldo: + 15 euros - 3 euros"]),
     ],
     ids=[
@@ -270,6 +274,7 @@ def test_copied_text_is_never_taken_for_code(screen: str, spoken: list[str]) -> 
         "selected-from-the-middle-of-a-step",
         "two-numbers-cut",
         "number-cut-after-a-tab",
+        "tab-and-spaces",
         "signs",
     ],
 )

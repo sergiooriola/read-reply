@@ -33,7 +33,7 @@ ALERT_TITLES = {
 SCREEN_MARK = re.compile(r"^([ \t]*)[●•] ", re.MULTILINE)
 # A line that starts like a numbered step. Dashes and "1." need no help:
 # Markdown lets them start a list under a paragraph, but no other number.
-SCREEN_STEP = re.compile(r"[ \t]*\d{1,9}[.)][ \t]")
+SCREEN_STEP = re.compile(r" *\d{1,9}[.)][ \t]")
 # Markdown's tab stops.
 TAB_SIZE = 4
 
@@ -87,8 +87,9 @@ def screen_chunks(text: str) -> list[str]:
     has in common: a selection that starts in a nested list still starts a
     list.
     """
-    text = SCREEN_MARK.sub(r"\1- ", textwrap.dedent(text))
-    return chunks_of(SCREEN_PARSER, apart_items(text))
+    # Tabs as Markdown's stops of four, so that indents compare as they show.
+    text = textwrap.dedent(text.expandtabs(TAB_SIZE))
+    return chunks_of(SCREEN_PARSER, apart_items(SCREEN_MARK.sub(r"\1- ", text)))
 
 
 def apart_items(text: str) -> str:
@@ -104,8 +105,7 @@ def apart_items(text: str) -> str:
     above = 0  # the indent of the last line with text
     for line in text.split("\n"):
         if line.strip():
-            spaces = line.expandtabs(TAB_SIZE)
-            indent = len(spaces) - len(spaces.lstrip())
+            indent = len(line) - len(line.lstrip())
             if indent < above and SCREEN_STEP.match(line):
                 lines.append("")
             above = indent

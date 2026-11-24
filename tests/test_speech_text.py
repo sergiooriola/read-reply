@@ -188,13 +188,31 @@ def test_copied_text_is_read_by_paragraphs_and_items_without_marks(
             "Usa read-reply --pane <panel> --print.",
             "Usa read-reply --pane <panel> --print.",
         ),
-        ("    - Un detalle\n    - Otro detalle", "Un detalle"),
         ("Uno • dos ● tres", "Uno • dos ● tres"),
     ],
-    ids=["angle-brackets", "nested-start", "marks-inside-a-line"],
+    ids=["angle-brackets", "marks-inside-a-line"],
 )
 def test_copied_text_is_read_as_it_shows(screen: str, spoken: str) -> None:
-    assert screen_chunks(screen)[0] == spoken
+    assert screen_chunks(screen) == [spoken]
+
+
+@pytest.mark.parametrize(
+    ("screen", "spoken"),
+    [
+        ("    - Un detalle\n    - Otro detalle", ["Un detalle", "Otro detalle"]),
+        (
+            "Primer párrafo.\n\n    Segundo párrafo.",
+            ["Primer párrafo.", "Segundo párrafo."],
+        ),
+        (
+            "● Ejecuta esto:\n\n      uv sync\n      scripts/check",
+            ["Ejecuta esto:", "uv sync scripts/check"],
+        ),
+    ],
+    ids=["nested-start", "selected-from-the-first-letter", "code"],
+)
+def test_copied_text_is_never_taken_for_code(screen: str, spoken: list[str]) -> None:
+    assert screen_chunks(screen) == spoken
 
 
 def test_long_paragraphs_are_cut_between_sentences() -> None:

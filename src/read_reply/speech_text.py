@@ -7,7 +7,6 @@ tables row by row and links by their text.
 """
 
 import re
-import textwrap
 from collections.abc import Iterator
 from contextlib import suppress
 from urllib.parse import urlsplit
@@ -28,9 +27,12 @@ ALERT_TITLES = {
     "WARNING": "Advertencia",
     "CAUTION": "Precaución",
 }
+# On screen, the indent of a line is layout: taken as Markdown, four spaces
+# would make code of it, which is announced instead of read.
+SCREEN_INDENT = re.compile(r"^[ \t]+", re.MULTILINE)
 # What the agents put on screen before each message, and Codex before each
 # list item too: ● in Claude Code, • in Codex.
-SCREEN_MARK = re.compile(r"^([ \t]*)[●•] ", re.MULTILINE)
+SCREEN_MARK = re.compile(r"^[●•] ", re.MULTILINE)
 
 
 class SpeechParser(MarkdownIt):
@@ -69,12 +71,13 @@ def screen_chunks(text: str) -> list[str]:
 
     The screen shows the reply already rendered, which is near enough to
     Markdown: its lists keep their dashes and numbers, so each item is still a
-    piece of its own, and the lines cut at the window's width join again. The
-    agents' marks before a message or an item become dashes, and a <word> on
-    screen is text to read, not HTML. Without the indent common to every line,
-    a selection that starts in a nested list is not taken for code.
+    piece of its own, and the lines cut at the window's width join again. With
+    no indent, nested lists are read as one, and code as text. The agents'
+    marks before a message or an item become dashes, and a <word> on screen is
+    text to read, not HTML.
     """
-    return chunks_of(SCREEN_PARSER, SCREEN_MARK.sub(r"\1- ", textwrap.dedent(text)))
+    text = SCREEN_MARK.sub("- ", SCREEN_INDENT.sub("", text))
+    return chunks_of(SCREEN_PARSER, text)
 
 
 def chunks_of(parser: SpeechParser, text: str) -> list[str]:

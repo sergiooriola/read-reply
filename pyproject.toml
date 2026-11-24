@@ -6,7 +6,12 @@ readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
 requires-python = ">=3.14"
-dependencies = []
+dependencies = [
+    # Upper bounds: speech_text.py reads their syntax tree by node names, which
+    # a major release (a minor one, in 0.x) may change.
+    "markdown-it-py>=4.2.0,<5",
+    "mdit-py-plugins>=0.7.0,<0.8",
+]
 
 [project.scripts]
 read-reply = "read_reply.cli:main"
@@ -19,6 +24,7 @@ build-backend = "uv_build"
 dev = [
     "mypy>=2.4",
     "pytest>=9.2",
+    "pytest-timeout>=2.4",
     "ruff>=0.17",
 ]
 

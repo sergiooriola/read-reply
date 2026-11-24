@@ -27,38 +27,46 @@ ALERT_TITLES = {
     "WARNING": "Advertencia",
     "CAUTION": "Precaución",
 }
-# On screen, the indent of a line is layout: taken as Markdown, four spaces
-# would make code of it, which is announced instead of read.
+# On screen, the indent of a line is layout: a nested item four spaces in
+# would not be an item for Markdown.
 SCREEN_INDENT = re.compile(r"^[ \t]+", re.MULTILINE)
 # What the agents put on screen before each message, and Codex before each
 # list item too: ● in Claude Code, • in Codex.
 SCREEN_MARK = re.compile(r"^[●•] ", re.MULTILINE)
+# A list item. Markdown would join "2." to a paragraph right above it, such as
+# the second one of item 1, which on screen has lost its indent.
+SCREEN_ITEM = re.compile(r"^(?=(?:[-*+]|\d{1,9}[.)])[ \t])", re.MULTILINE)
 
 
 class SpeechParser(MarkdownIt):
     """GitHub Flavored Markdown, which is what the agents write, parsed to be read.
 
-    With html, raw HTML is parsed as such so that it can be left out instead
-    of read. No $math$: it would take the text between two prices in dollars,
+    Raw HTML is parsed as such so that it can be left out instead of read. No
+    $math$: it would take the text between two prices in dollars,
     "0,99 $ de 5 $", for a formula.
+
+    For text copied from the screen, there is neither HTML nor code: a <panel>
+    or a ``` line on screen is text to read.
     """
 
-    def __init__(self, *, html: bool) -> None:
+    def __init__(self, *, screen: bool = False) -> None:
         # CommonMark's nesting limit, 20, drops everything after a list ten
         # levels deep.
-        super().__init__("commonmark", {"html": html, "maxNesting": 100})
+        super().__init__("commonmark", {"html": not screen, "maxNesting": 100})
         self.use(gfm_plugin)
         # The notes stay where they are written, to be skipped: moving them to
         # the end, as a web page does, fails on a note in a quote in a note.
         self.disable("footnote_tail")
+        if screen:
+            self.disable(["code", "fence"])
 
     def validateLink(self, url: str) -> bool:
         """Every link is valid here: none is rendered or followed, only read."""
         return True
 
 
-REPLY_PARSER = SpeechParser(html=True)
-SCREEN_PARSER = SpeechParser(html=False)
+REPLY_PARSER = SpeechParser()
+SCREEN_PARSER = SpeechParser(screen=True)
 
 
 def speech_chunks(markdown: str) -> list[str]:
@@ -71,13 +79,12 @@ def screen_chunks(text: str) -> list[str]:
 
     The screen shows the reply already rendered, which is near enough to
     Markdown: its lists keep their dashes and numbers, so each item is still a
-    piece of its own, and the lines cut at the window's width join again. With
-    no indent, nested lists are read as one, and code as text. The agents'
-    marks before a message or an item become dashes, and a <word> on screen is
-    text to read, not HTML.
+    piece of its own, and the lines cut at the window's width join again. The
+    indent goes, the agents' marks before a message or an item become dashes,
+    and each item starts a block of its own.
     """
     text = SCREEN_MARK.sub("- ", SCREEN_INDENT.sub("", text))
-    return chunks_of(SCREEN_PARSER, text)
+    return chunks_of(SCREEN_PARSER, SCREEN_ITEM.sub("\n", text))
 
 
 def chunks_of(parser: SpeechParser, text: str) -> list[str]:

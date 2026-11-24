@@ -64,7 +64,12 @@ y `herdr server reload-config` para cargarlo. Los errores salen como notificacio
 6. Mientras se prepara el texto, un script de PowerShell busca la ventana de Windows Terminal. Cuando se abre la de lectura, que reconoce por su perfil de Edge, la coloca arriba en el centro del terminal, por encima de las demás, y devuelve el foco a la ventana que lo tenía (`desktop.py`, `desktop.ps1`).
 7. Una segunda pulsación encuentra ocupado el bloqueo de la lectura en curso y le pide que pare (`cli.py`).
 
-Con Mayús+F9, el texto no sale de la transcripción sino del portapapeles de Windows, que lee `Get-Clipboard` en PowerShell (`windows.py`). Lo copiado del terminal es la respuesta ya dibujada, sin el Markdown, pero se parece lo bastante: las listas conservan sus guiones y números, y las líneas cortadas al ancho de la ventana se vuelven a unir. Así que pasa por el mismo analizador. Antes se quita la sangría, que en pantalla es solo maquetación y como Markdown convertiría en código lo sangrado, y las marcas que los agentes ponen delante de cada mensaje (● en Claude Code, • en Codex, que también lo usa en las viñetas) se convierten en guiones. Un `<panel>` se lee como texto, no como HTML (`screen_chunks` en `speech_text.py`).
+Con Mayús+F9, el texto no sale de la transcripción sino del portapapeles de Windows, que lee `Get-Clipboard` en PowerShell (`windows.py`). Lo copiado del terminal es la respuesta ya dibujada, sin el Markdown, pero se parece lo bastante: las listas conservan sus guiones y números, y las líneas cortadas al ancho de la ventana se vuelven a unir. Así que pasa por el mismo analizador, preparado antes (`screen_chunks` en `speech_text.py`):
+
+- Se quita la sangría, que en pantalla es solo maquetación.
+- Las marcas que los agentes ponen delante de cada mensaje (● en Claude Code, • en Codex, que también lo usa en las viñetas) se convierten en guiones.
+- Cada elemento de lista empieza un bloque propio.
+- El analizador no reconoce ni HTML ni código: un `<panel>` o una línea con ```` ``` ```` se leen como texto.
 
 Deja tres cosas fuera del repositorio: un perfil propio de Edge en `%LOCALAPPDATA%\read-reply\edge-profile`, de unos 45 MB y aparte del tuyo; la velocidad elegida, en `~/.local/state/read-reply/rate` (o bajo `XDG_STATE_HOME`), y el bloqueo, en `$XDG_RUNTIME_DIR/read-reply/`.
 

@@ -208,11 +208,31 @@ def test_copied_text_is_read_as_it_shows(screen: str, spoken: str) -> None:
             "● Ejecuta esto:\n\n      uv sync\n      scripts/check",
             ["Ejecuta esto:", "uv sync scripts/check"],
         ),
+        (
+            "● Añade esto:\n\n      ```bash\n      uv sync\n      ```",
+            ["Añade esto:", "bash uv sync"],
+        ),
+        (
+            "uv sync\n    ```\n\nDespués ejecuta scripts/check.",
+            ["uv sync ```", "Después ejecuta scripts/check."],
+        ),
     ],
-    ids=["nested-start", "selected-from-the-first-letter", "code"],
+    ids=[
+        "nested-start",
+        "selected-from-the-first-letter",
+        "code",
+        "fence",
+        "open-fence",
+    ],
 )
 def test_copied_text_is_never_taken_for_code(screen: str, spoken: list[str]) -> None:
     assert screen_chunks(screen) == spoken
+
+
+def test_copied_steps_stay_apart() -> None:
+    screen = "  1. Paso uno.\n\n     Su segundo párrafo.\n  2. Paso dos."
+
+    assert screen_chunks(screen) == ["Paso uno.", "Su segundo párrafo.", "Paso dos."]
 
 
 def test_long_paragraphs_are_cut_between_sentences() -> None:

@@ -36,6 +36,7 @@ SCREEN_MARK = re.compile(r"^([ \t]*)[●•] ", re.MULTILINE)
 SCREEN_STEP = re.compile(r" *\d{1,9}[.)][ \t]")
 # Markdown's tab stops.
 TAB_SIZE = 4
+SCREEN_INDENT = re.compile(r"^[ \t]+", re.MULTILINE)
 
 
 class SpeechParser(MarkdownIt):
@@ -87,8 +88,10 @@ def screen_chunks(text: str) -> list[str]:
     has in common: a selection that starts in a nested list still starts a
     list.
     """
-    # Tabs as Markdown's stops of four, so that indents compare as they show.
-    text = textwrap.dedent(text.expandtabs(TAB_SIZE))
+    # Tabs in the indent as Markdown's stops of four, so that indents compare
+    # as they show. Others stay: "•\t2026." is a bullet, not a step in one.
+    text = SCREEN_INDENT.sub(lambda indent: indent[0].expandtabs(TAB_SIZE), text)
+    text = textwrap.dedent(text)
     return chunks_of(SCREEN_PARSER, apart_items(SCREEN_MARK.sub(r"\1- ", text)))
 
 

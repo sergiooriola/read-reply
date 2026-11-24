@@ -265,6 +265,7 @@ def test_copied_text_is_never_taken_for_code(screen: str, spoken: list[str]) -> 
             ["En octubre de 2026. Se actualizó."],
         ),
         ("Saldo:\n    + 15 euros\n    - 3 euros", ["Saldo: + 15 euros - 3 euros"]),
+        ("•\t2026. Primer año del plan.", ["• 2026. Primer año del plan."]),
     ],
     ids=[
         "steps",
@@ -276,6 +277,7 @@ def test_copied_text_is_never_taken_for_code(screen: str, spoken: list[str]) -> 
         "number-cut-after-a-tab",
         "tab-and-spaces",
         "signs",
+        "tab-after-a-mark",
     ],
 )
 def test_copied_numbers_are_items_only_where_the_screen_says(

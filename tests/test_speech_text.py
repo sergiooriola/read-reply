@@ -35,6 +35,26 @@ def test_links_are_read_as_written(markdown: str, spoken: str) -> None:
     assert speech_chunks(markdown) == [spoken]
 
 
+# mdit-py-plugins 0.6.1 looped forever on an address inside a link's text,
+# and F9 hung with it: https://github.com/executablebooks/mdit-py-plugins/issues/160
+@pytest.mark.timeout(10)
+@pytest.mark.parametrize(
+    ("markdown", "spoken"),
+    [
+        ("Ver [www.example.com](https://www.example.com).", "Ver www.example.com."),
+        (
+            "Lee [ver www.example.com](https://a.com) antes de seguir.",
+            "Lee ver www.example.com antes de seguir.",
+        ),
+    ],
+    ids=["address-text", "address-in-prose-text"],
+)
+def test_an_address_inside_a_link_text_does_not_hang(
+    markdown: str, spoken: str
+) -> None:
+    assert speech_chunks(markdown) == [spoken]
+
+
 def test_deep_nesting_loses_no_text() -> None:
     levels = 25
     markdown = "\n".join("  " * i + f"- Nivel {i}" for i in range(levels))

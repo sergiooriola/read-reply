@@ -2,11 +2,12 @@
 
 Lee en voz alta la última respuesta del agente de programación del panel activo de Herdr. Pulsas F9 y la oyes con Álvaro, la voz natural de Edge en español de España; vuelves a pulsar F9 y se calla. Si solo te interesa una parte, la seleccionas con el ratón y pulsas Mayús+F9. Mientras lee, una ventana pequeña sobre el terminal permite pausarla, saltar a otra frase, cambiar la velocidad y pararla. Nunca lee nada por su cuenta.
 
-Funciona con Claude Code y Codex dentro de [Herdr](https://herdr.dev), en WSL sobre Windows.
+Funciona con Claude Code, Codex y Antigravity (`agy`) dentro de [Herdr](https://herdr.dev), en WSL sobre Windows.
 
 ## Requisitos
 
 - Windows con WSL 2, y Herdr 0.9.5 o posterior dentro de WSL.
+- En Herdr, la integración de cada agente que uses, que le dice qué conversación hay en cada panel: `herdr integration install claude`, `codex` o `antigravity-cli`. `herdr integration status` dice cuáles tienes.
 - Microsoft Edge en Windows, que viene con el sistema.
 - En WSL: [uv](https://docs.astral.sh/uv/).
 - Internet para la voz de Álvaro. Si Álvaro falla, la lectura sigue con una voz local de Windows, como Pablo; sin conexión no está probado.
@@ -58,6 +59,7 @@ y `herdr server reload-config` para cargarlo. Los errores salen como notificacio
 2. La respuesta sale de la transcripción de esa sesión, que se lee desde el final porque alguna pasa de 600 MB (`transcripts.py`):
    - Claude Code: el último mensaje que cerró un turno, en `~/.claude/projects/` (o bajo `CLAUDE_CONFIG_DIR`).
    - Codex: el último mensaje de su última tarea terminada, en `~/.codex/sessions/` (o bajo `CODEX_HOME`).
+   - Antigravity: la última respuesta del modelo que no llama a herramientas, en `~/.gemini/antigravity-cli/brain/<conversación>/.system_generated/logs/transcript_full.jsonl`.
 3. [markdown-it-py](https://github.com/executablebooks/markdown-it-py) lee el Markdown como GitHub, y la respuesta se convierte en párrafos para el oído: sin marcas, con los bloques de código anunciados en vez de deletreados, las tablas fila a fila, los enlaces por su texto y sin las notas al pie (`speech_text.py`).
 4. Edge los lee con la Web Speech API estándar, que en Edge incluye las voces naturales de Microsoft, en una ventana de aplicación (`--app`) con los controles. Un servidor HTTP efímero en `127.0.0.1` le pasa a la página el texto y la orden de parar. La página se cierra al acabar, y Edge con ella (`player.py`, `player.html`).
 5. La página lee fragmento a fragmento (`reading.mjs`). Para pausar, cambiar la velocidad o saltar, corta el fragmento y vuelve a pedirlo desde el principio de una frase o desde la palabra en curso, que Edge le dice con eventos `boundary`. Si Álvaro falla, lo intenta otra vez con él y, si vuelve a fallar, sigue con una voz local.
@@ -80,11 +82,12 @@ Deja tres cosas fuera del repositorio: un perfil propio de Edge en `%LOCALAPPDAT
 - **Pausar cortando:** `speechSynthesis.pause()` no hace nada con Álvaro: sigue hablando (medido en #7). Cortar y retomar sí funciona, a cambio de menos de un segundo de silencio antes de seguir.
 - **markdown-it-py:** un analizador de Markdown de verdad, en vez de expresiones regulares. Su plugin `gfm` (de [mdit-py-plugins](https://github.com/executablebooks/mdit-py-plugins), del mismo equipo) entiende el Markdown de GitHub, que es el que escriben los agentes. Se instala con el paquete y `scripts/install` toma su versión de `uv.lock`: antes era pandoc, un programa aparte cuya versión dependía de cada máquina.
 - **El portapapeles, y no la selección de Herdr:** Herdr solo pasa la selección a las acciones de sus plugins, no a un atajo `shell`. Además, con `copy_on_select`, que viene activado, la copia al portapapeles y la borra en cuanto sueltas el ratón (comprobado en el código de Herdr 0.9.5). Para leerla directamente habría que desactivar `copy_on_select` y copiar con Ctrl+C, que sin una selección visible interrumpe al agente. El portapapeles sirve tal como seleccionas hoy.
+- **Antigravity, por su transcripción en JSONL:** `agy` guarda cada conversación en una base de datos SQLite, con los pasos en bloques binarios (protobuf) de un formato privado. Al lado escribe la misma conversación en JSONL, un paso por línea. Ninguno de los dos está documentado, pero el JSONL se lee con la biblioteca estándar. De sus dos copias se lee `transcript_full.jsonl`, porque `transcript.jsonl` corta los mensajes largos hacia los 4.000 caracteres.
 - **Ninguna dependencia más:** el resto es la biblioteca estándar de Python.
 
 ## Límites
 
-- Antigravity (`agy`) no está soportado: guarda sus conversaciones en bloques binarios de SQLite.
+- La transcripción de Antigravity no está documentada: una versión nueva de `agy` puede cambiarla sin avisar, y entonces F9 diría que no encuentra la conversación o que no hay respuesta.
 - Las rutas y el código dentro de una frase se leen tal cual.
 - En lo copiado del terminal no se distingue el código: se lee entero, en vez de anunciarse. Las tablas llegan dibujadas con líneas, no fila a fila. Si la selección empieza a mitad de un elemento, sus subelementos pueden leerse seguidos, en un solo fragmento, sin perder palabras.
 - Al continuar tras una pausa o cambiar la velocidad, Álvaro tarda hasta un segundo en volver a hablar, y se nota el corte: es una voz online.

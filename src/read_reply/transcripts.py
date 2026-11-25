@@ -26,6 +26,8 @@ def last_reply(agent: Agent, home: Path | None = None) -> str:
     # The same variables that move the data of each agent.
     claude_dir = Path(os.environ.get("CLAUDE_CONFIG_DIR") or home / ".claude")
     codex_dir = Path(os.environ.get("CODEX_HOME") or home / ".codex")
+    # agy has no such variable, nor a documented place for its data.
+    agy_dir = home / ".gemini" / "antigravity-cli"
     sources: dict[str, tuple[Path, str, Extractor]] = {
         # ~/.claude/projects/<project>/<session>.jsonl
         "claude": (claude_dir / "projects", "*/{}.jsonl", claude_reply),
@@ -34,6 +36,13 @@ def last_reply(agent: Agent, home: Path | None = None) -> str:
             codex_dir / "sessions",
             "*/*/*/rollout-*-{}.jsonl",
             codex_reply,
+        ),
+        # ~/.gemini/antigravity-cli/brain/<conversation>/.system_generated/logs/
+        # transcript_full.jsonl; transcript.jsonl beside it cuts long messages.
+        "agy": (
+            agy_dir / "brain",
+            "{}/.system_generated/logs/transcript_full.jsonl",
+            agy_reply,
         ),
     }
     if agent.kind not in sources:
@@ -125,6 +134,27 @@ def codex_reply(lines: Iterator[bytes]) -> str | None:
         message = str(payload.get("last_agent_message") or "")
         if ends_task and message.strip():
             return message
+    return None
+
+
+def agy_reply(lines: Iterator[bytes]) -> str | None:
+    """The last finished answer of the model, from lines newest first.
+
+    Each step of the conversation is a line. An answer is a planner step with
+    text and no tool calls; the planner steps that call tools carry no text.
+    """
+    for line in lines:
+        if b'"PLANNER_RESPONSE"' not in line:
+            continue
+        entry = parse_json(line) or {}
+        answers = (
+            entry.get("type") == "PLANNER_RESPONSE"
+            and entry.get("status") == "DONE"
+            and not entry.get("tool_calls")
+        )
+        content = str(entry.get("content") or "")
+        if answers and content.strip():
+            return content
     return None
 
 

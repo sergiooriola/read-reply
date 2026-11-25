@@ -6,7 +6,13 @@ import pytest
 
 from read_reply.errors import UserError
 from read_reply.herdr import Agent
-from read_reply.transcripts import claude_reply, codex_reply, last_reply, lines_from_end
+from read_reply.transcripts import (
+    agy_reply,
+    claude_reply,
+    codex_reply,
+    last_reply,
+    lines_from_end,
+)
 
 
 def jsonl(path: Path, *entries: dict[str, Any], tail: bytes = b"") -> Path:
@@ -93,6 +99,37 @@ def test_codex_reply_is_the_last_task_with_a_message(tmp_path: Path) -> None:
     assert codex_reply(lines_from_end(path)) == "Segunda tarea."
 
 
+def agy_step(kind: str, status: str = "DONE", **fields: Any) -> dict[str, Any]:
+    return {"source": "MODEL", "type": kind, "status": status, **fields}
+
+
+# An answer after a tool round, then a turn still running: a blank answer, a
+# tool call, a tool that failed and an answer not yet done.
+AGY_TRANSCRIPT = (
+    {"source": "USER_EXPLICIT", "type": "USER_INPUT", "content": "pregunta"},
+    agy_step("PLANNER_RESPONSE", tool_calls=[{"name": "view_file", "args": {}}]),
+    agy_step("GENERIC", content="Salida de la herramienta."),
+    agy_step("PLANNER_RESPONSE", content="La respuesta."),
+    {"source": "USER_EXPLICIT", "type": "USER_INPUT", "content": "otra"},
+    agy_step("PLANNER_RESPONSE", content=" \n"),
+    agy_step("PLANNER_RESPONSE", tool_calls=[{"name": "grep_search", "args": {}}]),
+    agy_step("GENERIC", "ERROR", content="Falló la herramienta."),
+    agy_step("PLANNER_RESPONSE", "RUNNING", content="A medio escribir"),
+)
+
+
+def test_agy_reply_is_the_last_answer_without_tool_calls(tmp_path: Path) -> None:
+    path = jsonl(tmp_path / "transcript_full.jsonl", *AGY_TRANSCRIPT)
+
+    assert agy_reply(lines_from_end(path)) == "La respuesta."
+
+
+def test_agy_reply_is_none_before_the_first_answer(tmp_path: Path) -> None:
+    path = jsonl(tmp_path / "transcript_full.jsonl", *AGY_TRANSCRIPT[:3])
+
+    assert agy_reply(lines_from_end(path)) is None
+
+
 def test_last_reply_finds_the_claude_transcript_of_the_session(tmp_path: Path) -> None:
     jsonl(tmp_path / ".claude/projects/-home-x/abc-123.jsonl", *CLAUDE_TRANSCRIPT)
 
@@ -112,10 +149,21 @@ def test_last_reply_finds_the_codex_transcript_of_the_session(tmp_path: Path) ->
     assert last_reply(Agent("codex", "abc-123"), home=tmp_path) == "Hecho."
 
 
+def test_last_reply_finds_the_agy_transcript_of_the_conversation(
+    tmp_path: Path,
+) -> None:
+    logs = tmp_path / ".gemini/antigravity-cli/brain/abc-123/.system_generated/logs"
+    jsonl(logs / "transcript_full.jsonl", *AGY_TRANSCRIPT)
+    # The transcript beside it cuts long messages: never the one read.
+    jsonl(logs / "transcript.jsonl", agy_step("PLANNER_RESPONSE", content="Cort"))
+
+    assert last_reply(Agent("agy", "abc-123"), home=tmp_path) == "La respuesta."
+
+
 @pytest.mark.parametrize(
     ("agent", "message"),
     [
-        (Agent("agy", "abc"), "Todavía no sé leer las respuestas de agy."),
+        (Agent("copilot", "abc"), "Todavía no sé leer las respuestas de copilot."),
         (
             Agent("claude", "abc"),
             "No encuentro la conversación de claude de este panel.",

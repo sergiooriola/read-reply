@@ -1,26 +1,27 @@
 """The read-reply command, meant for Herdr keys.
 
 Herdr passes the pane that was focused when the key was pressed in
-HERDR_ACTIVE_PANE_ID. A press reads the last reply of the agent in it, or
-with --clipboard the text copied, such as a part of the reply selected with
-the mouse; a press while it is reading stops it. A key has no terminal, so
-errors also show up as Herdr notifications.
+HERDR_ACTIVE_PANE_ID. A press reads the last reply of the agent in it, and the
+reading window can go back to earlier ones; with --clipboard it reads the text
+copied, such as a part of the reply selected with the mouse. A press while it
+is reading stops it. A key has no terminal, so errors also show up as Herdr
+notifications.
 """
 
 import argparse
 import fcntl
 import os
 import sys
-from collections.abc import Callable
-from functools import partial
+import threading
+from collections.abc import Callable, Iterator
 from pathlib import Path
 
 from read_reply import herdr
 from read_reply.errors import UserError
 from read_reply.herdr import agent_in
-from read_reply.player import Player, request_stop
+from read_reply.player import Earlier, Player, request_stop
 from read_reply.speech_text import screen_chunks, speech_chunks
-from read_reply.transcripts import last_reply
+from read_reply.transcripts import replies
 from read_reply.windows import clipboard_text
 
 NOTIFICATION_TITLE = "Leer respuesta"
@@ -28,12 +29,16 @@ NOTIFICATION_TITLE = "Leer respuesta"
 
 def main(argv: list[str] | None = None) -> None:
     args = parse_args(argv)
-    chunks = clipboard_chunks if args.clipboard else partial(reply_chunks, args.pane)
+    chunks: Callable[[], list[str]] = clipboard_chunks
+    earlier: Earlier | None = None
+    if not args.clipboard:
+        agent_replies = Replies(args.pane)
+        chunks, earlier = agent_replies.last, agent_replies.earlier
     try:
         if args.print:
             print("\n\n".join(chunks()))
         else:
-            read_or_stop(chunks, state_dir(), rate_file())
+            read_or_stop(chunks, state_dir(), rate_file(), earlier)
     except UserError as error:
         notify(str(error))
         sys.exit(1)
@@ -66,11 +71,45 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
     return args
 
 
-def reply_chunks(pane: str) -> list[str]:
-    chunks = speech_chunks(last_reply(agent_in(pane)))
-    if not chunks:
-        raise UserError("La respuesta no tiene texto que leer.")
-    return chunks
+class Replies:
+    """The replies of the agent in a pane, as chunks to speak, newest first.
+
+    The transcript is read back only as far as the replies asked for, and
+    each once: the reading window asks for earlier ones while one is read.
+    """
+
+    def __init__(self, pane: str) -> None:
+        self._pane = pane
+        self._lock = threading.Lock()  # the window's requests come in threads
+        self._read: list[list[str]] = []
+        self._unread: Iterator[list[str]] = iter(())
+
+    def last(self) -> list[str]:
+        """The last finished reply; the errors say why there is none."""
+        unread = replies(agent_in(self._pane))
+        reply = next(unread, None)
+        if reply is None:
+            raise UserError("Este agente todavía no ha terminado ninguna respuesta.")
+        chunks = speech_chunks(reply)
+        if not chunks:
+            raise UserError("La respuesta no tiene texto que leer.")
+        with self._lock:
+            # Earlier replies with nothing to say are left out.
+            self._read, self._unread = (
+                [chunks],
+                filter(None, map(speech_chunks, unread)),
+            )
+        return chunks
+
+    def earlier(self, steps: int) -> list[str] | None:
+        """The reply that many replies before the last, or None past the first."""
+        with self._lock:
+            while len(self._read) <= steps:
+                chunks = next(self._unread, None)
+                if chunks is None:
+                    return None
+                self._read.append(chunks)
+            return self._read[steps]
 
 
 def clipboard_chunks() -> list[str]:
@@ -80,11 +119,17 @@ def clipboard_chunks() -> list[str]:
     return chunks
 
 
-def read_or_stop(chunks: Callable[[], list[str]], state: Path, rate: Path) -> None:
+def read_or_stop(
+    chunks: Callable[[], list[str]],
+    state: Path,
+    rate: Path,
+    earlier: Earlier | None = None,
+) -> None:
     """Reads the chunks, or stops the reading in progress if there is one.
 
     They are prepared once a second press can stop the reading, while the
-    desktop script looks for the terminal.
+    desktop script looks for the terminal. With earlier, the window can go
+    back to the texts before them.
     """
     state.mkdir(mode=0o700, parents=True, exist_ok=True)
     with (state / "lock").open("w") as lock:
@@ -96,7 +141,7 @@ def read_or_stop(chunks: Callable[[], list[str]], state: Path, rate: Path) -> No
         with Player(state, rate) as player:
             text = chunks()
             if not player.stop_requested:
-                player.play(text)
+                player.play(text, earlier)
 
 
 def state_dir() -> Path:

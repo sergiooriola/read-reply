@@ -422,6 +422,77 @@ describe("Reading, going to another sentence", () => {
   });
 });
 
+describe("Reading, going to another text", () => {
+  const LAST = ["Uno dos. Tres cuatro.", "Cinco seis."];
+  const EARLIER = ["Una anterior. Con dos frases."];
+  let synth;
+  beforeEach(() => {
+    synth = new FakeSynth();
+  });
+
+  test("another text is read from its start once the clicks stop", (t) => {
+    t.mock.timers.enable({ apis: ["setTimeout"] });
+    const { reading: r, progress, finished } = reading(synth, LAST);
+    synth.end();
+
+    r.load(EARLIER);
+    assert.equal(synth.current, null); // silence at once
+    r.load(LAST);
+    r.load(EARLIER);
+    t.mock.timers.tick(SETTLE_MS);
+
+    assert.equal(synth.last.text, "Una anterior. Con dos frases.");
+    assert.equal(synth.spoken.length, 3);
+    assert.deepEqual(progress.slice(-1), [0]);
+    synth.end();
+    assert.deepEqual(finished, [null]); // its end is the end of the reading
+  });
+
+  test("its sentences are the ones to go to", (t) => {
+    t.mock.timers.enable({ apis: ["setTimeout"] });
+    const { reading: r } = reading(synth, LAST);
+
+    r.load(EARLIER);
+    r.skip(1);
+    t.mock.timers.tick(SETTLE_MS);
+
+    assert.equal(synth.last.text, "Con dos frases.");
+  });
+
+  test("paused, it waits at the start of the other text", (t) => {
+    t.mock.timers.enable({ apis: ["setTimeout"] });
+    const { reading: r } = reading(synth, LAST);
+    r.togglePause();
+
+    r.load(EARLIER);
+    t.mock.timers.tick(SETTLE_MS);
+    assert.equal(synth.spoken.length, 1);
+    r.togglePause();
+
+    assert.equal(synth.last.text, "Una anterior. Con dos frases.");
+  });
+
+  test("after a stop, another text is not read", (t) => {
+    t.mock.timers.enable({ apis: ["setTimeout"] });
+    const { reading: r } = reading(synth, LAST);
+    r.stop();
+
+    r.load(EARLIER);
+    t.mock.timers.tick(SETTLE_MS);
+
+    assert.equal(synth.spoken.length, 1);
+  });
+
+  test("before the start, the other text is where it starts", () => {
+    const { reading: r } = reading(synth, LAST, {}, { start: false });
+
+    r.load(EARLIER);
+    r.start();
+
+    assert.equal(synth.last.text, "Una anterior. Con dos frases.");
+  });
+});
+
 describe("Reading before it starts", () => {
   let synth;
   beforeEach(() => {

@@ -1,5 +1,6 @@
 // The reading behind player.html: speaks the chunks one after another, and
-// lets the listener pause, change the speed, go to another sentence and stop.
+// lets the listener pause, change the speed, go to another sentence or to
+// another text, such as an earlier reply, and stop.
 //
 // Edge's online voices, such as Álvaro, ignore speechSynthesis.pause(), so a
 // pause cancels the utterance, and resuming speaks again from the start of the
@@ -115,22 +116,13 @@ export class Reading {
   }) {
     this.#synth = synth;
     this.#Utterance = Utterance;
-    this.#chunks = chunks;
     this.voice = voice;
     this.#preferred = preferred;
     this.rate = rate;
     this.#onProgress = onProgress;
     this.#onSkip = onSkip;
     this.#onFinish = onFinish;
-    this.#starts = [];
-    this.#total = 0;
-    for (const chunk of chunks) {
-      this.#starts.push(this.#total);
-      this.#total += chunk.length;
-    }
-    this.#sentences = chunks.flatMap((chunk, index) =>
-      sentenceStarts(chunk).map((start) => this.#starts[index] + start),
-    );
+    this.#setChunks(chunks);
   }
 
   get paused() {
@@ -182,6 +174,14 @@ export class Reading {
     if (target !== undefined) this.#jump(target);
   }
 
+  // Reads another text instead, from its start, as a jump does: silence at
+  // once, and the voice there once the clicks stop. Paused, it stays paused.
+  load(chunks) {
+    if (this.#finished) return;
+    this.#setChunks(chunks);
+    this.#jump(0);
+  }
+
   // While the slider is held, the reading does not end: the listener may be
   // about to go back.
   hold(held) {
@@ -191,6 +191,19 @@ export class Reading {
 
   stop() {
     this.#finish(null);
+  }
+
+  #setChunks(chunks) {
+    this.#chunks = chunks;
+    this.#starts = [];
+    this.#total = 0;
+    for (const chunk of chunks) {
+      this.#starts.push(this.#total);
+      this.#total += chunk.length;
+    }
+    this.#sentences = chunks.flatMap((chunk, index) =>
+      sentenceStarts(chunk).map((start) => this.#starts[index] + start),
+    );
   }
 
   #speak() {

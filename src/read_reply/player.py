@@ -3,7 +3,8 @@
 Edge's implementation of the standard Web Speech API includes Microsoft's
 natural online voices. A throwaway HTTP server on 127.0.0.1, which WSL
 forwards to Windows, hands the page (player.html and reading.mjs) the text and
-any stop request. The page closes itself when it ends, and Edge exits with it.
+any stop request, and earlier replies when the listener goes back to them. The
+page closes itself when it ends, and Edge exits with it.
 """
 
 import re
@@ -11,6 +12,7 @@ import secrets
 import subprocess
 import threading
 import time
+from collections.abc import Callable
 from contextlib import ExitStack, suppress
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib.resources import files
@@ -38,6 +40,10 @@ POLL_INTERVAL_S = 0.2
 STOP_URL_FILE = "stop-url"
 # What the Web Speech API accepts; the page offers a narrower range.
 RATE_MIN, RATE_MAX = 0.1, 10.0
+EARLIER_PATH = re.compile(r"reply/([1-9][0-9]{0,5})")
+
+type Earlier = Callable[[int], list[str] | None]
+"""The text that many texts before the one read, or None past the first."""
 
 
 class Process(Protocol):
@@ -70,6 +76,7 @@ class Player:
         self._desktop = Desktop()
         self._context = ExitStack()  # undoes __enter__
         self._chunks: list[str] = []
+        self._earlier: Earlier | None = None
         self._page_loaded = threading.Event()
         self._stop_requested = threading.Event()
         self._finished = threading.Event()
@@ -107,11 +114,14 @@ class Player:
     def stop_requested(self) -> bool:
         return self._stop_requested.is_set()
 
-    def play(self, chunks: list[str]) -> None:
-        """Speaks the chunks, and returns when they end or a stop arrives."""
+    def play(self, chunks: list[str], earlier: Earlier | None = None) -> None:
+        """Speaks the chunks, and returns when they end or a stop arrives.
+
+        With earlier, the window can go back to the texts before them.
+        """
         if not EDGE.exists():
             raise UserError(f"No encuentro Microsoft Edge en {EDGE}.")
-        self._chunks = chunks
+        self._chunks, self._earlier = chunks, earlier
         profile = edge_profile()
         edge = subprocess.Popen(
             edge_command(self.url, profile, self._desktop.terminal()),
@@ -171,8 +181,20 @@ class Player:
                             "chunks": player._chunks,
                             "voices": VOICES,
                             "rate": saved_rate(player._rate_file),
+                            "earlier": player._earlier is not None,
                         }
                         self._reply(dumps(reply).encode(), "application/json")
+                    case "reply/0":  # back to the first text
+                        body = dumps({"chunks": player._chunks}).encode()
+                        self._reply(body, "application/json")
+                    case str(path) if match := EARLIER_PATH.fullmatch(path):
+                        steps = int(match[1])
+                        chunks = player._earlier(steps) if player._earlier else None
+                        if not chunks:
+                            self.send_error(404)  # no text that far back
+                            return
+                        body = dumps({"chunks": chunks}).encode()
+                        self._reply(body, "application/json")
                     case "state":
                         state = {"stop": player.stop_requested}
                         self._reply(dumps(state).encode(), "application/json")

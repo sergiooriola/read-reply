@@ -1,6 +1,6 @@
 # read-reply
 
-Lee en voz alta la última respuesta del agente de programación del panel activo de Herdr. Pulsas F9 y la oyes con Álvaro, la voz natural de Edge en español de España; vuelves a pulsar F9 y se calla. Si solo te interesa una parte, la seleccionas con el ratón y pulsas Mayús+F9. Mientras lee, una ventana pequeña sobre el terminal permite pausarla, saltar a otra frase, cambiar la velocidad y pararla. Nunca lee nada por su cuenta.
+Lee en voz alta la última respuesta del agente de programación del panel activo de Herdr. Pulsas F9 y la oyes con Álvaro, la voz natural de Edge en español de España; vuelves a pulsar F9 y se calla. Si solo te interesa una parte, la seleccionas con el ratón y pulsas Mayús+F9. Mientras lee, una ventana pequeña sobre el terminal permite pausarla, saltar a otra frase, volver a respuestas anteriores, cambiar la velocidad y pararla. Nunca lee nada por su cuenta.
 
 Funciona con Claude Code, Codex y Antigravity (`agy`) dentro de [Herdr](https://herdr.dev), en WSL sobre Windows.
 
@@ -43,25 +43,26 @@ y `herdr server reload-config` para cargarlo. Los errores salen como notificacio
 - **Mayús+F9** lee solo lo que hayas seleccionado con el ratón en el terminal. Herdr lo copia al soltar el botón, y Mayús+F9 lee lo copiado, así que también sirve para un texto copiado en cualquier otro programa de Windows. Herdr copia a través de Windows Terminal, que lo permite de serie; si en tu perfil está desactivado `compatibility.allowOSC52`, leería la copia anterior: copia tú el texto antes de pulsar.
 - **F9 o Mayús+F9 otra vez**, mientras lee, la corta.
 - **La ventana**, arriba en el centro del terminal y por encima de las demás mientras lee, no se queda con el foco: sigues escribiendo donde estabas. Con un clic en ella:
+  - **‹ y ›** (o Mayús+← y Mayús+→), arriba, van a la respuesta anterior del agente y vuelven hacia la última. Entre los dos se ve cómo empieza la que suena. Con un texto copiado no hay otras.
   - **Pausa y continuar** (o espacio). Al continuar, vuelve al principio de la frase.
   - **⏮ y ⏭** (o ← y →) van a la frase anterior y a la siguiente.
   - **El deslizador** de abajo muestra por dónde va. Arrástralo, o haz clic en él, para saltar a la frase de ese punto.
   - **− y +** (o las teclas − y +) cambian la velocidad, de 0,5× a 2×. Se recuerda para la próxima vez.
   - **Parar** (o Esc, o cerrar la ventana).
 
-  ![La ventana de lectura: frase anterior, pausa, frase siguiente, velocidad y parar, con el deslizador debajo](docs/controller.png)
+  ![La ventana de lectura: arriba, respuesta anterior y siguiente con el principio de la que suena; debajo, frase anterior, pausa, frase siguiente, velocidad y parar, y el deslizador](docs/controller.png)
 - Los errores, como un panel sin agente, salen como notificación de Herdr, que llega a Windows si Herdr tiene `[ui.toast] delivery = "system"`.
 - `read-reply --pane w1:p2 --print` escribe el texto tal como lo leería, sin leerlo. Sirve para revisar cómo queda una respuesta. `read-reply --clipboard --print` hace lo mismo con lo copiado.
 
 ## Cómo funciona
 
 1. Herdr pasa a sus atajos el panel activo en `HERDR_ACTIVE_PANE_ID`, y `herdr agent get` dice qué agente hay en él y cuál es su sesión (`herdr.py`).
-2. La respuesta sale de la transcripción de esa sesión, que se lee desde el final porque alguna pasa de 600 MB (`transcripts.py`):
+2. La respuesta sale de la transcripción de esa sesión, que se lee desde el final porque alguna pasa de 600 MB, y solo hasta donde haga falta: hasta la última respuesta al pulsar, y hasta las anteriores cuando la ventana las pide (`transcripts.py`, y `Replies` en `cli.py`):
    - Claude Code: el último mensaje que cerró un turno, en `~/.claude/projects/` (o bajo `CLAUDE_CONFIG_DIR`).
    - Codex: el último mensaje de su última tarea terminada, en `~/.codex/sessions/` (o bajo `CODEX_HOME`).
    - Antigravity: la última respuesta del modelo que no llama a herramientas, en `~/.gemini/antigravity-cli/brain/<conversación>/.system_generated/logs/transcript_full.jsonl`.
 3. [markdown-it-py](https://github.com/executablebooks/markdown-it-py) lee el Markdown como GitHub, y la respuesta se convierte en párrafos para el oído: sin marcas, con los bloques de código anunciados en vez de deletreados, las tablas fila a fila, los enlaces por su texto y sin las notas al pie (`speech_text.py`).
-4. Edge los lee con la Web Speech API estándar, que en Edge incluye las voces naturales de Microsoft, en una ventana de aplicación (`--app`) con los controles. Un servidor HTTP efímero en `127.0.0.1` le pasa a la página el texto y la orden de parar. La página se cierra al acabar, y Edge con ella (`player.py`, `player.html`).
+4. Edge los lee con la Web Speech API estándar, que en Edge incluye las voces naturales de Microsoft, en una ventana de aplicación (`--app`) con los controles. Un servidor HTTP efímero en `127.0.0.1` le pasa a la página el texto, las respuestas anteriores que pida y la orden de parar. La página se cierra al acabar, y Edge con ella (`player.py`, `player.html`).
 5. La página lee fragmento a fragmento (`reading.mjs`). Para pausar, cambiar la velocidad o saltar, corta el fragmento y vuelve a pedirlo desde el principio de una frase o desde la palabra en curso, que Edge le dice con eventos `boundary`. Si Álvaro falla, lo intenta otra vez con él y, si vuelve a fallar, sigue con una voz local.
 6. Mientras se prepara el texto, un script de PowerShell busca la ventana de Windows Terminal. Cuando se abre la de lectura, que reconoce por su perfil de Edge, la coloca arriba en el centro del terminal, por encima de las demás, y devuelve el foco a la ventana que lo tenía (`desktop.py`, `desktop.ps1`).
 7. Una segunda pulsación encuentra ocupado el bloqueo de la lectura en curso y le pide que pare (`cli.py`).
@@ -79,6 +80,7 @@ Deja tres cosas fuera del repositorio: un perfil propio de Edge en `%LOCALAPPDAT
 
 - **La voz de Edge:** es la voz masculina en español de España más realista que se puede usar gratis y sin cuenta. Azure Speech da las mismas voces con API oficial, pero su plan gratuito (500.000 caracteres al mes) se queda corto. `edge-tts` usa el servicio interno de Edge, y Microsoft lo rompió a propósito en octubre de 2026.
 - **La ventana, de Edge:** es la misma página que lee, así que no hace falta ninguna dependencia nueva. Un panel emergente de Herdr taparía el del agente y se quedaría con el teclado.
+- **Las respuestas anteriores, en la ventana:** está abierta mientras lee, así que no hace falta otro atajo (en muchos portátiles, las teclas F ya piden Fn), ni un panel emergente de Herdr con una lista, que taparía el del agente.
 - **Pausar cortando:** `speechSynthesis.pause()` no hace nada con Álvaro: sigue hablando (medido en #7). Cortar y retomar sí funciona, a cambio de menos de un segundo de silencio antes de seguir.
 - **markdown-it-py:** un analizador de Markdown de verdad, en vez de expresiones regulares. Su plugin `gfm` (de [mdit-py-plugins](https://github.com/executablebooks/mdit-py-plugins), del mismo equipo) entiende el Markdown de GitHub, que es el que escriben los agentes. Se instala con el paquete y `scripts/install` toma su versión de `uv.lock`: antes era pandoc, un programa aparte cuya versión dependía de cada máquina.
 - **El portapapeles, y no la selección de Herdr:** Herdr solo pasa la selección a las acciones de sus plugins, no a un atajo `shell`. Además, con `copy_on_select`, que viene activado, la copia al portapapeles y la borra en cuanto sueltas el ratón (comprobado en el código de Herdr 0.9.5). Para leerla directamente habría que desactivar `copy_on_select` y copiar con Ctrl+C, que sin una selección visible interrumpe al agente. El portapapeles sirve tal como seleccionas hoy.

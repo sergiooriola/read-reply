@@ -40,7 +40,40 @@ def test_the_page_and_the_reply_are_served_under_a_secret_path(tmp_path: Path) -
         reply = json.loads(get(player.url + "reply"))
 
     assert b"speechSynthesis" in page
-    assert reply == {"chunks": ["Hola."], "voices": list(VOICES), "rate": 1.0}
+    assert reply == {
+        "chunks": ["Hola."],
+        "voices": list(VOICES),
+        "rate": 1.0,
+        "earlier": False,
+    }
+
+
+def test_the_page_can_go_back_to_earlier_texts_and_return(tmp_path: Path) -> None:
+    earlier = {1: ["La anterior."], 2: ["La primera."]}
+    with Player(tmp_path, tmp_path / "rate") as player:
+        player._chunks, player._earlier = ["La última."], earlier.get
+
+        reply = json.loads(get(player.url + "reply"))
+        back = [json.loads(get(f"{player.url}reply/{n}"))["chunks"] for n in (2, 0)]
+        with pytest.raises(HTTPError) as past_the_first:
+            get(player.url + "reply/3")
+
+    assert reply["earlier"] is True
+    assert back == [["La primera."], ["La última."]]
+    assert past_the_first.value.code == 404
+
+
+@pytest.mark.parametrize("path", ["reply/1", "reply/-1", "reply/01", "reply/x"])
+def test_without_earlier_texts_there_is_nothing_to_go_back_to(
+    tmp_path: Path, path: str
+) -> None:
+    with Player(tmp_path, tmp_path / "rate") as player:
+        player._chunks = ["Lo copiado."]
+
+        with pytest.raises(HTTPError) as not_found:
+            get(player.url + path)
+
+    assert not_found.value.code == 404
 
 
 def test_the_speed_chosen_in_one_reading_comes_back_in_the_next(
@@ -225,7 +258,7 @@ def test_edge_opens_the_page_as_a_small_window_over_the_terminal() -> None:
     command = edge_command("http://127.0.0.1:1/x/", "C:\\profile", terminal)
 
     assert "--app=http://127.0.0.1:1/x/" in command
-    assert "--window-size=340,110" in command
+    assert "--window-size=340,140" in command
     assert "--window-position=790,8" in command
     assert "--user-data-dir=C:\\profile" in command
     assert "--headless" not in command

@@ -205,6 +205,26 @@ def test_a_session_without_a_finished_reply_has_none(tmp_path: Path) -> None:
     assert first_reply(Agent("claude", "abc"), home=tmp_path) is None
 
 
+def test_claude_replies_need_no_message_id_nor_a_prompt_before(
+    tmp_path: Path,
+) -> None:
+    def without_id(value: str) -> dict[str, Any]:
+        message = {"stop_reason": "end_turn", "content": [text(value)]}
+        return {"type": "assistant", "message": message}
+
+    path = jsonl(
+        tmp_path / "s.jsonl",
+        without_id("Primera."),
+        without_id("Segunda."),
+        PROMPT,
+        without_id("Tercera."),
+    )
+
+    found = list(claude_replies(lines_from_end(path)))
+
+    assert found == ["Tercera.", "Segunda.", "Primera."]
+
+
 def test_claude_replies_skip_blank_messages(tmp_path: Path) -> None:
     path = jsonl(
         tmp_path / "s.jsonl",

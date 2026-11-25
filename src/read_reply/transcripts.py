@@ -81,8 +81,8 @@ def claude_replies(lines: Iterator[bytes]) -> Iterator[str]:
     A message spans several lines that share its id (thinking, text, tool
     calls), and the one that ends a turn does not stop for a tool.
     """
-    message_id: str | None = None  # of the reply being gathered
-    texts: list[str] = []
+    message_id: str | None = None  # of the reply being gathered, if it has one
+    texts: list[str] = []  # of the reply being gathered, if any
     for line in lines:
         if b'"assistant"' not in line and b'"user"' not in line:
             continue  # cheap filter before parsing
@@ -94,8 +94,9 @@ def claude_replies(lines: Iterator[bytes]) -> Iterator[str]:
         ):
             continue
         message = entry.get("message") or {}
-        if message_id is not None:
-            if entry["type"] == "assistant" and message.get("id") == message_id:
+        if texts:
+            same = message_id is not None and message.get("id") == message_id
+            if entry["type"] == "assistant" and same:
                 texts = message_texts(message) + texts
                 continue
             yield "\n\n".join(texts)  # an older entry: the reply is whole
@@ -103,7 +104,7 @@ def claude_replies(lines: Iterator[bytes]) -> Iterator[str]:
         ends_turn = message.get("stop_reason") not in (None, "tool_use")
         if entry["type"] == "assistant" and ends_turn and message_texts(message):
             message_id, texts = message.get("id"), message_texts(message)
-    if message_id is not None:
+    if texts:
         yield "\n\n".join(texts)
 
 

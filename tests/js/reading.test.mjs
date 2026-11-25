@@ -472,6 +472,21 @@ describe("Reading, going to another text", () => {
     assert.equal(synth.last.text, "Una anterior. Con dos frases.");
   });
 
+  test("held while the other text comes, the end of this one waits for it", (t) => {
+    t.mock.timers.enable({ apis: ["setTimeout"] });
+    const { reading: r, finished } = reading(synth, LAST);
+    r.hold(true);
+    synth.end();
+    synth.end();
+
+    r.load(EARLIER);
+    r.hold(false);
+    t.mock.timers.tick(SETTLE_MS);
+
+    assert.equal(synth.last.text, "Una anterior. Con dos frases.");
+    assert.deepEqual(finished, []);
+  });
+
   test("after a stop, another text is not read", (t) => {
     t.mock.timers.enable({ apis: ["setTimeout"] });
     const { reading: r } = reading(synth, LAST);

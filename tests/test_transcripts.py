@@ -104,7 +104,7 @@ def agy_step(kind: str, status: str = "DONE", **fields: Any) -> dict[str, Any]:
 
 
 # An answer after a tool round, then a turn still running: a blank answer, a
-# tool call, a tool that failed and an answer not yet done.
+# tool call with text, a tool that failed and an answer not yet done.
 AGY_TRANSCRIPT = (
     {"source": "USER_EXPLICIT", "type": "USER_INPUT", "content": "pregunta"},
     agy_step("PLANNER_RESPONSE", tool_calls=[{"name": "view_file", "args": {}}]),
@@ -112,7 +112,11 @@ AGY_TRANSCRIPT = (
     agy_step("PLANNER_RESPONSE", content="La respuesta."),
     {"source": "USER_EXPLICIT", "type": "USER_INPUT", "content": "otra"},
     agy_step("PLANNER_RESPONSE", content=" \n"),
-    agy_step("PLANNER_RESPONSE", tool_calls=[{"name": "grep_search", "args": {}}]),
+    agy_step(
+        "PLANNER_RESPONSE",
+        content="Busco.",
+        tool_calls=[{"name": "grep_search", "args": {}}],
+    ),
     agy_step("GENERIC", "ERROR", content="Falló la herramienta."),
     agy_step("PLANNER_RESPONSE", "RUNNING", content="A medio escribir"),
 )

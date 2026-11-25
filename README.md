@@ -7,6 +7,7 @@ Funciona con Claude Code, Codex y Antigravity (`agy`) dentro de [Herdr](https://
 ## Requisitos
 
 - Windows con WSL 2, y Herdr 0.9.5 o posterior dentro de WSL.
+- En Herdr, la integración de cada agente que uses, que le dice qué conversación hay en cada panel: `herdr integration install claude`, `codex` o `antigravity-cli`. `herdr integration status` dice cuáles tienes.
 - Microsoft Edge en Windows, que viene con el sistema.
 - En WSL: [uv](https://docs.astral.sh/uv/).
 - Internet para la voz de Álvaro. Si Álvaro falla, la lectura sigue con una voz local de Windows, como Pablo; sin conexión no está probado.

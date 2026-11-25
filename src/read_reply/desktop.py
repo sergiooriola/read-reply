@@ -18,7 +18,7 @@ from typing import Self
 from read_reply import windows
 
 # The window's size, in CSS pixels: player.html is laid out for it.
-WINDOW_SIZE = (340, 110)
+WINDOW_SIZE = (340, 140)
 MARGIN = 8
 MONITOR_TIMEOUT_S = 3.0
 

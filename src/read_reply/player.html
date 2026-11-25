@@ -20,10 +20,21 @@
     height: 100%;
     padding: 8px 12px;
     display: grid;
-    grid-template-rows: 1fr auto;
+    grid-template-rows: auto 1fr auto;
+    grid-template-columns: minmax(0, 1fr); /* a long title is cut, not widening it */
     gap: 6px;
   }
-  .controls { display: flex; align-items: center; gap: 4px; }
+  .texts, .controls { display: flex; align-items: center; gap: 4px; }
+  .texts button { width: 26px; height: 24px; }
+  #title {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    font-size: 12px;
+    opacity: 0.8;
+  }
   .spacer { flex: 1; }
   button {
     display: grid;
@@ -46,6 +57,15 @@
   #position { width: 100%; margin: 0; accent-color: var(--accent); }
 </style>
 <main>
+  <div class="texts">
+    <button id="older" aria-label="Respuesta anterior" title="Respuesta anterior (Mayús+←)" disabled>
+      <svg aria-hidden="true" viewBox="0 0 16 16"><path d="M10.3 2.3a1 1 0 0 1 0 1.4L5.99 8l4.3 4.3a1 1 0 0 1-1.4 1.4l-5-5a1 1 0 0 1 0-1.4l5-5a1 1 0 0 1 1.4 0Z"/></svg>
+    </button>
+    <span id="title"></span>
+    <button id="newer" aria-label="Respuesta siguiente" title="Respuesta siguiente (Mayús+→)" disabled>
+      <svg aria-hidden="true" viewBox="0 0 16 16"><path d="M5.7 2.3a1 1 0 0 0 0 1.4L10.01 8l-4.3 4.3a1 1 0 0 0 1.4 1.4l5-5a1 1 0 0 0 0-1.4l-5-5a1 1 0 0 0-1.4 0Z"/></svg>
+    </button>
+  </div>
   <div class="controls">
     <button id="previous" aria-label="Frase anterior" title="Frase anterior (←)">
       <svg aria-hidden="true" viewBox="0 0 16 16"><rect x="2.5" y="3" width="2" height="10" rx="0.75"/><path d="M13.5 3.6v8.8a.8.8 0 0 1-1.24.67L6 8.67a.8.8 0 0 1 0-1.34l6.26-4.4a.8.8 0 0 1 1.24.67Z"/></svg>
@@ -98,6 +118,7 @@
     const { promise: finished, resolve: finish } = Promise.withResolvers();
     let dragging = false; // the slider follows the voice, but not under the pointer
     let holder = null; // the pointer holding the slider
+    let fetching = false; // another text asked for and not yet here
     let releasing = null; // the release, once "change" has had its turn
     // The controls and a stop work at once; it speaks once the voice is known.
     const reading = new Reading({
@@ -114,6 +135,8 @@
       onFinish: finish,
     });
 
+    // Held by the slider or by a text on its way, the reading does not end.
+    const keepOpen = () => reading.hold(holder !== null || fetching);
     const showRate = () => {
       $("rate").value = `${rateText.format(reading.rate)}×`;
       $("slower").disabled = reading.rate <= RATE_MIN;
@@ -147,13 +170,13 @@
       releasing = null;
       holder = event.pointerId;
       dragging = true;
-      reading.hold(true);
+      keepOpen();
     });
     const release = () => {
       releasing = null;
       holder = null;
       dragging = false;
-      reading.hold(false);
+      keepOpen();
     };
     // Let go anywhere: the pointer may leave the slider, or the window.
     for (const name of ["pointerup", "pointercancel"]) {
@@ -168,10 +191,53 @@
       dragging = false; // the slider shows where the jump lands
       reading.seek(event.target.value / 1000);
     });
+    // The texts of this window: 0 is the one it opened with, 1 the one
+    // before it, and so on. Only replies have earlier ones.
+    let shown = 0;
+    let shownChunks = reply.chunks;
+    let oldest = reply.earlier ? Infinity : 0; // known once one is missing
+    const showText = () => {
+      $("title").textContent = $("title").title = shownChunks[0] ?? "";
+      // Not off while fetching: a disabled button loses the keyboard focus.
+      $("older").disabled = shown >= oldest;
+      $("newer").disabled = shown === 0;
+    };
+    const goToText = async (index) => {
+      if (fetching || index < 0 || index > oldest || index === shown) return;
+      fetching = true;
+      keepOpen(); // the reading may end before the text arrives
+      try {
+        const response = await fetch(`${base}reply/${index}`);
+        if (response.status === 404) {
+          oldest = Math.min(oldest, index - 1); // none that far back
+        } else if (response.ok) {
+          shownChunks = (await response.json()).chunks;
+          shown = index;
+          reading.load(shownChunks);
+        }
+      } catch {
+        // read-reply is gone: the poll below stops the reading
+      } finally {
+        fetching = false;
+        keepOpen();
+        showText();
+      }
+    };
+    $("older").addEventListener("click", () => goToText(shown + 1));
+    $("newer").addEventListener("click", () => goToText(shown - 1));
     $("slower").addEventListener("click", () => changeRate(-1));
     $("faster").addEventListener("click", () => changeRate(1));
     $("stop").addEventListener("click", () => reading.stop());
     document.addEventListener("keydown", (event) => {
+      const textKeys = {
+        ArrowLeft: () => goToText(shown + 1),
+        ArrowRight: () => goToText(shown - 1),
+      };
+      if (event.shiftKey && textKeys[event.key]) {
+        event.preventDefault();
+        textKeys[event.key]();
+        return;
+      }
       const action = {
         " ": togglePause,
         // The slider's own keys too, which would land in the same sentence.
@@ -192,6 +258,7 @@
       action();
     });
     showRate();
+    showText();
 
     // F9 again asks read-reply to stop, which tells the page here.
     const poll = setInterval(async () => {
